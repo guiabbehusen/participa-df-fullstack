@@ -45,38 +45,13 @@ export default defineConfig(({ mode }) => {
               options: { cacheName: 'pages', networkTimeoutSeconds: 3 },
             },
 
-            // Transformers.js (bundle) + ONNX WASM copiados localmente em /vendor/xenova/*
+            // Assets (JS/CSS/images/fonts)
             {
-              urlPattern: ({ url }) =>
-                (url.pathname.startsWith('/vendor/xenova/') || url.pathname.startsWith('/xenova/vendor/')) &&
-                (url.pathname.endsWith('.wasm') || url.pathname.endsWith('.js')),
+              urlPattern: ({ request }) =>
+                ['style', 'script', 'image', 'font'].includes(request.destination),
               handler: 'CacheFirst',
               options: {
-                cacheName: 'xenova-runtime',
-                cacheableResponse: { statuses: [0, 200] },
-                expiration: { maxEntries: 64, maxAgeSeconds: 60 * 60 * 24 * 365 },
-              },
-            },
-
-
-            // Worker estático
-            {
-              urlPattern: ({ url }) => url.pathname.startsWith('/workers/') && url.pathname.endsWith('.js'),
-              handler: 'CacheFirst',
-              options: {
-                cacheName: 'workers',
-                cacheableResponse: { statuses: [0, 200] },
-                expiration: { maxEntries: 16, maxAgeSeconds: 60 * 60 * 24 * 365 },
-              },
-            },
-
-            // Modelos baixados do Hugging Face (pesos/tokenizers)
-            {
-              urlPattern: ({ url }) =>
-                url.origin.includes('huggingface.co') || url.origin.includes('cdn-lfs.huggingface.co'),
-              handler: 'CacheFirst',
-              options: {
-                cacheName: 'hf-models',
+                cacheName: 'assets',
                 cacheableResponse: { statuses: [0, 200] },
                 expiration: { maxEntries: 256, maxAgeSeconds: 60 * 60 * 24 * 30 },
               },
@@ -114,9 +89,6 @@ export default defineConfig(({ mode }) => {
       },
     },
 
-    // evita prebundle agressivo para transformers em alguns ambientes
-    optimizeDeps: {
-      exclude: ['@xenova/transformers', 'onnxruntime-web'],
-    },
+    optimizeDeps: {},
   }
 })
