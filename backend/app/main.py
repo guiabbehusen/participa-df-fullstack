@@ -6,7 +6,9 @@ from typing import Optional
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from .db import get_session, init_db
 from .models import (
     Attachment,
     CreateManifestationResponse,
@@ -15,24 +17,20 @@ from .models import (
     ManifestationRecord,
     ManifestationStatus,
 )
-from .settings import APP_NAME, CORS_ORIGINS, MAX_FILE_BYTES, UPLOAD_DIR
-from .storage import STORE
+from .settings import ALLOWED_ORIGINS, MAX_FILE_BYTES, UPLOAD_DIR
+from .storage import store
 from .utils import ensure_dir, generate_protocol, read_limited, safe_filename, utc_now_iso
 
 
 app = FastAPI(
-    title=APP_NAME,
+    title="Participa DF API",
     version="1.0.0",
-    description=(
-        "API mínima de Ouvidoria para hackathon: cria manifestações (texto + anexos) "
-        "e retorna protocolo para acompanhamento."
-    ),
-    contact={"name": "Participa DF (hackathon)"},
+    description="API de Ouvidoria (protocolo + anexos) com persistência em banco e Swagger em /docs.",
 )
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=CORS_ORIGINS,
+    allow_origins=ALLOWED_ORIGINS or ["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -40,71 +38,51 @@ app.add_middleware(
 
 
 @app.on_event("startup")
-def on_startup() -> None:
+async def on_startup():
+    # DB tables (out-of-the-box). For production, use migrations (Alembic).
+    await init_db()
     ensure_dir(UPLOAD_DIR)
 
 
 @app.get("/api/health")
-def health() -> dict:
+def health():
     return {"ok": True}
 
 
-def validate_accessibility_requirements(
+def _require_accessibility_for_media(
     audio_file: Optional[UploadFile],
-    audio_transcript: Optional[str],
     image_file: Optional[UploadFile],
-    image_alt: Optional[str],
     video_file: Optional[UploadFile],
+    audio_transcript: Optional[str],
+    image_alt: Optional[str],
     video_description: Optional[str],
-    description_text: Optional[str],
-) -> None:
-    # Regras de acessibilidade: se anexou mídia, deve haver texto alternativo/transcrição.
+):
+    # WCAG-friendly: mídia deve ter alternativa textual.
     if audio_file and not (audio_transcript or "").strip():
-        raise HTTPException(
-            status_code=422,
-            detail="Audio anexado requer transcrição (audio_transcript) para acessibilidade.",
-        )
-
+        raise HTTPException(status_code=422, detail="Áudio anexado requer transcrição.")
     if image_file and not (image_alt or "").strip():
-        raise HTTPException(
-            status_code=422,
-            detail="Imagem anexada requer texto alternativo (image_alt) para acessibilidade.",
-        )
-
+        raise HTTPException(status_code=422, detail="Imagem anexada requer texto alternativo.")
     if video_file and not (video_description or "").strip():
-        raise HTTPException(
-            status_code=422,
-            detail="Video anexado requer descrição (video_description) para acessibilidade.",
-        )
-
-    if not (description_text or "").strip() and not (audio_file or image_file or video_file):
-        raise HTTPException(
-            status_code=422,
-            detail="Envie um relato em texto ou anexe pelo menos um arquivo.",
-        )
+        raise HTTPException(status_code=422, detail="Vídeo anexado requer descrição.")
 
 
-async def save_upload(protocol_dir: Path, field: str, upload: UploadFile) -> Attachment:
-    # Sanitiza e prefixa para evitar colisões
-    original = upload.filename or "upload"
-    safe = safe_filename(original)
-    filename = f"{field}-{safe}"
+async def _save_upload(protocol: str, field: str, upload: UploadFile) -> Attachment:
+    ensure_dir(UPLOAD_DIR / protocol)
+
+    raw_name = upload.filename or f"{field}.bin"
+    filename = safe_filename(raw_name)
 
     try:
         content = await read_limited(upload, MAX_FILE_BYTES)
     except ValueError:
-        raise HTTPException(
-            status_code=413,
-            detail=f"Arquivo muito grande. Limite: {MAX_FILE_BYTES // (1024 * 1024)}MB.",
-        )
+        raise HTTPException(status_code=413, detail="Arquivo muito grande.")
 
-    ensure_dir(protocol_dir)
-    file_path = protocol_dir / filename
-    file_path.write_bytes(content)
+    out = UPLOAD_DIR / protocol / f"{field}-{filename}"
+    out.write_bytes(content)
 
     return Attachment(
         field=field,
-        filename=filename,
+        filename=out.name,
         content_type=upload.content_type or "application/octet-stream",
         bytes=len(content),
     )
@@ -120,43 +98,50 @@ async def save_upload(protocol_dir: Path, field: str, upload: UploadFile) -> Att
     },
 )
 async def create_manifestation(
-    # Campos principais
-    kind: ManifestationKind = Form(..., description="Tipo: reclamacao/denuncia/sugestao/elogio/solicitacao"),
-    subject: str = Form(..., min_length=3, max_length=120, description="Assunto/tema"),
-    description_text: Optional[str] = Form(None, max_length=5000, description="Relato em texto"),
-    anonymous: bool = Form(False, description="Se true, não solicita dados pessoais"),
-    # Campos de acessibilidade para mídias
-    audio_transcript: Optional[str] = Form(None, max_length=5000, description="Transcrição do áudio"),
-    image_alt: Optional[str] = Form(None, max_length=400, description="Texto alternativo da imagem"),
-    video_description: Optional[str] = Form(None, max_length=800, description="Descrição do vídeo"),
-    # Mídias
+    session: AsyncSession = Depends(get_session),
+    kind: ManifestationKind = Form(...),
+    subject: str = Form(...),
+    description_text: Optional[str] = Form(None),
+    anonymous: bool = Form(False),
+    audio_transcript: Optional[str] = Form(None),
+    image_alt: Optional[str] = Form(None),
+    video_description: Optional[str] = Form(None),
     audio_file: Optional[UploadFile] = File(None),
     image_file: Optional[UploadFile] = File(None),
     video_file: Optional[UploadFile] = File(None),
 ):
-    validate_accessibility_requirements(
+    subject = (subject or "").strip()
+    description_text = (description_text or "").strip() or None
+    audio_transcript = (audio_transcript or "").strip() or None
+    image_alt = (image_alt or "").strip() or None
+    video_description = (video_description or "").strip() or None
+
+    has_any_file = any([audio_file, image_file, video_file])
+    if not description_text and not has_any_file:
+        raise HTTPException(
+            status_code=422,
+            detail="Envie um relato em texto ou anexe pelo menos um arquivo.",
+        )
+
+    _require_accessibility_for_media(
         audio_file=audio_file,
-        audio_transcript=audio_transcript,
         image_file=image_file,
-        image_alt=image_alt,
         video_file=video_file,
+        audio_transcript=audio_transcript,
+        image_alt=image_alt,
         video_description=video_description,
-        description_text=description_text,
     )
 
     protocol = generate_protocol()
     created_at = utc_now_iso()
 
-    protocol_dir = UPLOAD_DIR / protocol
     attachments: list[Attachment] = []
-
-    # Salva anexos (se existirem)
     if audio_file:
-        attachments.append(await save_upload(protocol_dir, "audio_file", audio_file))
+        attachments.append(await _save_upload(protocol, "audio_file", audio_file))
     if image_file:
-        attachments.append(await save_upload(protocol_dir, "image_file", image_file))
+        attachments.append(await _save_upload(protocol, "image_file", image_file))
     if video_file:
-        attachments.append(await save_upload(protocol_dir, "video_file", video_file))
+        attachments.append(await _save_upload(protocol, "video_file", video_file))
 
     record = ManifestationRecord(
         protocol=protocol,
@@ -164,16 +149,15 @@ async def create_manifestation(
         status=ManifestationStatus.recebido,
         kind=kind,
         subject=subject,
-        description_text=(description_text or None),
+        description_text=description_text,
         anonymous=anonymous,
-        audio_transcript=(audio_transcript or None),
-        image_alt=(image_alt or None),
-        video_description=(video_description or None),
+        audio_transcript=audio_transcript,
+        image_alt=image_alt,
+        video_description=video_description,
         attachments=attachments,
     )
 
-    STORE.create(record)
-
+    await store.create(session, record)
     return CreateManifestationResponse(protocol=protocol, created_at=created_at)
 
 
@@ -182,8 +166,8 @@ async def create_manifestation(
     response_model=ManifestationRecord,
     responses={404: {"model": ErrorResponse}},
 )
-def get_manifestation(protocol: str):
-    record = STORE.get(protocol)
+async def get_manifestation(protocol: str, session: AsyncSession = Depends(get_session)):
+    record = await store.get(session, protocol)
     if not record:
         raise HTTPException(status_code=404, detail="Protocolo não encontrado")
     return record

@@ -41,7 +41,7 @@ class ManifestationRecord(BaseModel):
     image_alt: Optional[str] = None
     video_description: Optional[str] = None
 
-    attachments: List[Attachment] = []
+    attachments: List[Attachment] = Field(default_factory=list)
 
 
 class CreateManifestationResponse(BaseModel):
