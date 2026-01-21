@@ -2,22 +2,32 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  /* Ensures native controls follow a dark color scheme */
+  color-scheme: dark;
+}
+
 html, body {
   height: 100%;
 }
 
 body {
   margin: 0;
+  min-height: 100%;
   color: rgb(var(--text));
-  background: radial-gradient(1200px 600px at 20% 10%, rgba(var(--primary2), 0.18), transparent 60%),
-              radial-gradient(900px 500px at 80% 0%, rgba(var(--primary), 0.18), transparent 55%),
-              linear-gradient(180deg, rgba(var(--bg), 1), rgba(var(--bg2), 1));
+  background-color: rgb(var(--bg));
+  background-image:
+    radial-gradient(1200px 600px at 20% 10%, rgba(var(--primary2), 0.18), transparent 60%),
+    radial-gradient(900px 500px at 80% 0%, rgba(var(--primary), 0.18), transparent 55%),
+    linear-gradient(180deg, rgba(var(--bg), 1), rgba(var(--bg2), 1));
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-/* Focus ring: visible & consistent */
+/* Focus ring: visible & consistent (WCAG-friendly) */
 :focus-visible {
-  outline: 2px solid rgba(var(--primary), 0.9);
-  outline-offset: 2px;
+  outline: 2px solid rgba(var(--primary), 0.95);
+  outline-offset: 3px;
 }
 
 /* Screen-reader only */
@@ -33,19 +43,29 @@ body {
   border: 0;
 }
 
-/* Glass surfaces */
+/* Glass surfaces (premium + readable) */
 .glass {
-  background: rgba(var(--surface), 0.08);
-  border: 1px solid rgba(var(--border), 0.14);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
+  background: rgba(var(--surface), 0.12);
+  border: 1px solid rgba(var(--border), 0.16);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   box-shadow: var(--shadow-glow);
   border-radius: var(--radius-xl);
 }
 
+/* For elements that need the glow without glass background */
+.shadow-glow {
+  box-shadow: var(--shadow-glow);
+}
+
 /* Subtle shimmer utility */
 .shimmer {
-  background-image: linear-gradient(110deg, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0.18) 30%, rgba(255,255,255,0.08) 60%);
+  background-image: linear-gradient(
+    110deg,
+    rgba(255,255,255,0.08) 0%,
+    rgba(255,255,255,0.18) 30%,
+    rgba(255,255,255,0.08) 60%
+  );
   background-size: 200% 100%;
   animation: shimmer 1.4s linear infinite;
 }
