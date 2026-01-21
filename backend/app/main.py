@@ -20,6 +20,7 @@ from .models import (
 from .settings import ALLOWED_ORIGINS, MAX_FILE_BYTES, UPLOAD_DIR
 from .storage import store
 from .utils import ensure_dir, generate_protocol, read_limited, safe_filename, utc_now_iso
+from .iza_ollama import router as iza_router
 
 
 app = FastAPI(
@@ -27,6 +28,9 @@ app = FastAPI(
     version="1.0.0",
     description="API de Ouvidoria (protocolo + anexos) com persistência em banco e Swagger em /docs.",
 )
+
+# Rotas da IZA (Ollama)
+app.include_router(iza_router)
 
 app.add_middleware(
     CORSMiddleware,

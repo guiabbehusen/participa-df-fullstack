@@ -42,11 +42,7 @@ class AttachmentDB(Base):
     __tablename__ = "attachments"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    manifestation_id: Mapped[str] = mapped_column(
-        String(36),
-        ForeignKey("manifestations.id", ondelete="CASCADE"),
-        index=True,
-    )
+    manifestation_id: Mapped[str] = mapped_column(String(36), ForeignKey("manifestations.id", ondelete="CASCADE"), index=True)
 
     field: Mapped[str] = mapped_column(String(64), nullable=False)
     filename: Mapped[str] = mapped_column(String(255), nullable=False)

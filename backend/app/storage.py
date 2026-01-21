@@ -19,15 +19,15 @@ class Store:
         # A coluna created_at no DB tem default NOW().
         # Mantemos record.created_at como ISO string para resposta imediata.
         m = ManifestationDB(
-          protocol=record.protocol,
-          status=record.status.value if hasattr(record.status, "value") else str(record.status),
-          kind=record.kind.value if hasattr(record.kind, "value") else str(record.kind),
-          subject=record.subject,
-          description_text=record.description_text,
-          anonymous=bool(record.anonymous),
-          audio_transcript=record.audio_transcript,
-          image_alt=record.image_alt,
-          video_description=record.video_description,
+            protocol=record.protocol,
+            status=record.status.value if hasattr(record.status, "value") else str(record.status),
+            kind=record.kind.value if hasattr(record.kind, "value") else str(record.kind),
+            subject=record.subject,
+            description_text=record.description_text,
+            anonymous=bool(record.anonymous),
+            audio_transcript=record.audio_transcript,
+            image_alt=record.image_alt,
+            video_description=record.video_description,
         )
 
         for a in record.attachments:

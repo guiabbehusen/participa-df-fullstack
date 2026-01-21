@@ -31,3 +31,15 @@ CORS_ORIGINS = ALLOWED_ORIGINS
 #   postgresql+asyncpg://user:pass@localhost:5432/dbname
 # Fallback: SQLite (works without external dependencies)
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./participa_df.db")
+
+# Ollama (LLM local)
+# - Exige o Ollama rodando na máquina (default: http://localhost:11434)
+# - O modelo deve estar previamente baixado via `ollama pull <modelo>`
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.1:8b-instruct")
+
+# Ajustes de geração (valores conservadores para respostas consistentes)
+OLLAMA_TEMPERATURE = float(os.getenv("OLLAMA_TEMPERATURE", "0.2"))
+OLLAMA_TOP_P = float(os.getenv("OLLAMA_TOP_P", "0.9"))
+OLLAMA_NUM_CTX = int(os.getenv("OLLAMA_NUM_CTX", "4096"))
+OLLAMA_TIMEOUT_S = float(os.getenv("OLLAMA_TIMEOUT_S", "90"))
