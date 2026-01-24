@@ -12,6 +12,8 @@ export type IzaBrainReply = {
   intent: IzaIntent
   can_submit: boolean
   draft_patch?: IzaDraftPatch | null
+  missing_required_fields?: string[]
+  missing_recommended_fields?: string[]
   provider: 'ollama'
   model: string
 }
@@ -77,6 +79,7 @@ function fallbackAssistant(text: string): IzaBrainReply {
       subject: intent === 'denuncia_infraestrutura' ? 'Infraestrutura urbana' : intent,
       needs_location: true,
       needs_time: true,
+      needs_impact: true,
       needs_photo: intent === 'denuncia_infraestrutura',
     },
     provider: 'ollama',
@@ -103,25 +106,25 @@ export function useIzaBrain(options: UseIzaBrainOptions = {}) {
 
   const warmUp = useCallback(async () => {
     setModelStatus('loading')
-    setModelStatusText('Conectando ao Ollama…')
+    setModelStatusText('Preparando assistente…')
     setError(null)
 
     try {
       const res = await izaHealth()
       if (res?.ok) {
         setModelStatus('ready')
-        setModelStatusText('Ollama conectado.')
+        setModelStatusText('Assistente pronto.')
         setModelName(String(res?.model || 'ollama'))
         setError(null)
         return
       }
       setModelStatus('error')
       setModelStatusText('Modo compatível.')
-      setError(String(res?.error || 'Ollama indisponível.'))
+      setError(String(res?.error || 'Assistente indisponível.'))
     } catch (e: any) {
       setModelStatus('error')
       setModelStatusText('Modo compatível.')
-      setError(e?.message ? String(e.message) : 'Não consegui conectar ao Ollama.')
+      setError(e?.message ? String(e.message) : 'Não consegui iniciar o assistente.')
     }
   }, [])
 
@@ -149,7 +152,7 @@ export function useIzaBrain(options: UseIzaBrainOptions = {}) {
       try {
         const res = await izaChat(messages, (draft as any) ?? undefined)
         setModelStatus('ready')
-        setModelStatusText('Ollama conectado.')
+        setModelStatusText('Assistente pronto.')
         setModelName(res.model)
         setError(null)
 
@@ -158,6 +161,8 @@ export function useIzaBrain(options: UseIzaBrainOptions = {}) {
           intent: res.intent,
           can_submit: res.can_submit,
           draft_patch: res.draft_patch ?? null,
+          missing_required_fields: res.missing_required_fields ?? undefined,
+          missing_recommended_fields: res.missing_recommended_fields ?? undefined,
           provider: 'ollama',
           model: res.model,
         }
@@ -165,7 +170,7 @@ export function useIzaBrain(options: UseIzaBrainOptions = {}) {
         // Se o Ollama falhar, volte ao fallback para manter o app funcional.
         setModelStatus('error')
         setModelStatusText('Modo compatível.')
-        setError(e?.message ? String(e.message) : 'Falha ao chamar o Ollama.')
+        setError(e?.message ? String(e.message) : 'Falha ao chamar o assistente.')
         return fallbackAssistant(lastUser)
       } finally {
         setIsThinking(false)
