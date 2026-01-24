@@ -12,8 +12,9 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(function Inp
       ref={ref}
       {...props}
       className={cn(
-        'w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-50 placeholder:text-slate-300/40'
-          + ' focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/80',
+        // WCAG: bom contraste, altura confortável e foco evidente
+        'w-full rounded-xl border border-[rgba(var(--c-border),0.85)] bg-[rgb(var(--c-surface))] px-4 py-3 text-base leading-relaxed text-[rgb(var(--c-text))] placeholder:text-[rgba(var(--c-text),0.55)]',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(var(--c-primary),0.40)]',
         className,
       )}
     />

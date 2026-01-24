@@ -1,22 +1,28 @@
 import * as React from 'react'
 import { cn } from '@/utils/cn'
 
-export type BadgeProps = React.HTMLAttributes<HTMLSpanElement> & {
-  variant?: 'default' | 'info' | 'success' | 'warning'
-}
+type BadgeVariant = 'default' | 'success' | 'warning' | 'info'
 
-export function Badge({ className, variant = 'default', ...props }: BadgeProps) {
+export function Badge({
+  className,
+  variant = 'default',
+  ...props
+}: React.HTMLAttributes<HTMLSpanElement> & { variant?: BadgeVariant }) {
+  const variants: Record<BadgeVariant, string> = {
+    default: 'border border-[rgba(var(--c-border),0.70)] bg-[rgba(var(--c-surface),0.85)] text-[rgb(var(--c-text))]',
+    success: 'border border-[rgba(var(--c-success),0.30)] bg-[rgba(var(--c-success),0.10)] text-[rgb(var(--c-text))]',
+    warning: 'border border-[rgba(var(--c-warning),0.35)] bg-[rgba(var(--c-warning),0.12)] text-[rgb(var(--c-text))]',
+    info: 'border border-[rgba(var(--c-primary),0.28)] bg-[rgba(var(--c-primary),0.10)] text-[rgb(var(--c-text))]',
+  }
+
   return (
     <span
-      {...props}
       className={cn(
-        'inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold ring-1 ring-white/10',
-        variant === 'default' && 'bg-white/10 text-slate-50',
-        variant === 'info' && 'bg-blue-600/20 text-blue-100 ring-blue-400/20',
-        variant === 'success' && 'bg-emerald-500/20 text-emerald-100 ring-emerald-400/20',
-        variant === 'warning' && 'bg-amber-500/20 text-amber-100 ring-amber-400/20',
+        'inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold',
+        variants[variant],
         className,
       )}
+      {...props}
     />
   )
 }
