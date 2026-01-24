@@ -1,52 +1,45 @@
-import { Link, NavLink } from 'react-router-dom'
-import { Badge } from '@/components/ui/Badge'
+import { Link, useLocation } from 'react-router-dom'
+import { ArrowRight } from 'lucide-react'
+import { Button } from '@/components/ui/Button'
 
 export function Header() {
+  const { pathname } = useLocation()
+
   return (
-    <header className="sticky top-0 z-40 border-b border-white/10 bg-slate-950/30 backdrop-blur-md">
-      <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-4 py-3">
-        <div className="flex items-center gap-3">
-          <Link to="/" className="inline-flex items-center gap-3">
+    <header className="sticky top-0 z-40 border-b border-[rgba(var(--c-border),0.70)] bg-[rgba(var(--c-surface),0.92)] backdrop-blur-md">
+      <div className="mx-auto flex max-w-5xl items-center justify-between gap-3 px-4 py-3">
+        <Link to="/" className="flex items-center gap-3" aria-label="Ir para a página inicial">
+          {/* Marca principal no header (institucional) */}
+          <div className="rounded-xl bg-[rgb(var(--c-primary))] px-3 py-2 shadow-[var(--shadow-elev-1)] ring-1 ring-[rgba(var(--c-primary),0.30)]">
             <img
-              src="/brand/participadf-branca.svg"
-              alt="Participa DF"
+              src="/brand/logo-gdf-branca.png"
+              alt="Governo do Distrito Federal"
               className="h-6 w-auto"
+              loading="eager"
             />
-            <Badge variant="info">PWA</Badge>
-          </Link>
-        </div>
+          </div>
 
-        <nav aria-label="Navegação principal" className="hidden items-center gap-2 md:flex">
-          <NavLink
-            to="/"
-            className={({ isActive }) =>
-              `rounded-full px-3 py-1 text-sm ${isActive ? 'bg-white/10 text-white' : 'text-slate-200/80 hover:bg-white/10'}`
-            }
-          >
-            Início
-          </NavLink>
-          <NavLink
-            to="/manifestacoes/nova"
-            className={({ isActive }) =>
-              `rounded-full px-3 py-1 text-sm ${isActive ? 'bg-white/10 text-white' : 'text-slate-200/80 hover:bg-white/10'}`
-            }
-          >
-            Registrar
-          </NavLink>
-        </nav>
+          <div className="leading-tight">
+            <p className="text-sm font-extrabold tracking-tight text-[rgb(var(--c-text))]">Participa DF</p>
+            <p className="text-xs font-semibold text-[rgba(var(--c-text),0.70)]">Ouvidoria</p>
+          </div>
+        </Link>
 
-        <div className="flex items-center gap-3">
-          <img
-            src="/brand/logo-gdf-branca.png"
-            alt="GDF"
-            className="hidden h-10 w-auto opacity-90 md:block"
-          />
-          <Link
-            to="/manifestacoes/nova"
-            className="inline-flex items-center justify-center rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow shadow-blue-600/20 hover:bg-blue-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/80"
-          >
-            Registrar manifestação
-          </Link>
+        <div className="flex items-center gap-2">
+          <div className="hidden items-center gap-2 sm:flex">
+            <span className="text-xs font-semibold text-[rgba(var(--c-text),0.70)]">
+              Acessível · Multicanal · PWA
+            </span>
+          </div>
+
+          {pathname !== '/manifestacoes/nova' && (
+            <Link to="/manifestacoes/nova">
+              <Button className="px-4" aria-label="Criar nova manifestação">
+                Nova manifestação
+                <ArrowRight className="h-4 w-4" aria-hidden="true" />
+              </Button>
+            </Link>
+          )}
         </div>
       </div>
     </header>

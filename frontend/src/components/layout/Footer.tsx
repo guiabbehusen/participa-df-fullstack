@@ -1,12 +1,12 @@
 export function Footer() {
   return (
-    <footer className="mt-10 border-t border-white/10 bg-slate-950/20">
+    <footer className="mt-10 border-t border-[rgba(var(--c-border),0.70)] bg-[rgba(var(--c-surface),0.75)] backdrop-blur-md">
       <div className="mx-auto max-w-5xl px-4 py-8">
-        <p className="text-sm text-slate-200/80">
-          Participa DF · Ouvidoria — protótipo para hackathon. Acessibilidade (WCAG 2.1 AA) e multicanalidade (texto, áudio, imagem, vídeo).
+        <p className="text-sm text-[rgba(var(--c-text),0.80)]">
+          Participa DF · Ouvidoria — versão PWA acessível para registro de manifestações (texto, áudio, imagem e vídeo), com emissão automática de protocolo.
         </p>
-        <p className="mt-2 text-xs text-slate-200/60">
-          Dica: você pode usar o assistente IZA no canto inferior direito para triagem local (sem API keys).
+        <p className="mt-2 text-xs text-[rgba(var(--c-text),0.65)]">
+          Dica: use o assistente IZA (canto inferior direito) para te guiar no preenchimento, inclusive por voz.
         </p>
       </div>
     </footer>
