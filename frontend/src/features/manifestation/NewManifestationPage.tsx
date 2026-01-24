@@ -1,76 +1,137 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 import { zodResolver } from '@hookform/resolvers/zod'
+import { useNavigate } from 'react-router-dom'
+import { AlertTriangle, CheckCircle2, Info, Paperclip } from 'lucide-react'
 
-import { ErrorSummary, type ErrorItem } from '@/components/a11y/ErrorSummary'
-import { Badge } from '@/components/ui/Badge'
+import type { ManifestationCreatePayload, ManifestationKind } from '@/types/manifestation'
 import { Button } from '@/components/ui/Button'
-import { Card, CardDescription, CardTitle } from '@/components/ui/Card'
+import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Input } from '@/components/ui/Input'
 import { Textarea } from '@/components/ui/Textarea'
+import { Badge } from '@/components/ui/Badge'
+import { ErrorSummary } from '@/components/a11y/ErrorSummary'
 import { createManifestation } from '@/services/api/manifestations'
 import { clearDraft, loadDraft, saveDraft } from '@/services/storage/draft'
-import type { ManifestationCreatePayload, ManifestationKind } from '@/types/manifestation'
+
+const KINDS: { value: ManifestationKind; label: string }[] = [
+  { value: 'reclamacao', label: 'Reclamação' },
+  { value: 'denuncia', label: 'Denúncia' },
+  { value: 'sugestao', label: 'Sugestão' },
+  { value: 'elogio', label: 'Elogio' },
+  { value: 'solicitacao', label: 'Solicitação' },
+]
+
+const SUBJECT_EXAMPLES = [
+  'Infraestrutura (buraco)',
+  'Saúde (atendimento)',
+  'Segurança (ocorrência)',
+  'Iluminação pública',
+  'Transporte',
+]
+
+const needsIdentification = (k?: ManifestationKind) =>
+  k === 'elogio' || k === 'sugestao' || k === 'solicitacao'
 
 const schema = z
   .object({
-    kind: z.enum(['reclamacao', 'denuncia', 'sugestao', 'elogio', 'solicitacao'], {
-      required_error: 'Selecione o tipo de manifestação.',
-    }),
-    subject: z
-      .string()
-      .min(3, 'Informe o assunto (mín. 3 caracteres).')
-      .max(120, 'Assunto muito longo.'),
-    description_text: z.string().max(5000).optional().or(z.literal('')),
-    anonymous: z.boolean().default(false),
+    kind: z.enum(['reclamacao', 'denuncia', 'sugestao', 'elogio', 'solicitacao']),
 
-    audio_file: z.any().optional(),
-    audio_transcript: z.string().max(5000).optional().or(z.literal('')),
+    subject: z.string().min(3, 'Informe o assunto (mín. 3 caracteres).').max(120),
+    subject_detail: z.string().min(3, 'Descreva o tema (mín. 3 caracteres).').max(240),
+
+    description_text: z.string().optional(),
+
+    anonymous: z.boolean().default(false),
+    contact_name: z.string().optional(),
+    contact_email: z.string().optional(),
+    contact_phone: z.string().optional(),
 
     image_file: z.any().optional(),
-    image_alt: z.string().max(400).optional().or(z.literal('')),
+    image_alt: z.string().optional(),
+
+    audio_file: z.any().optional(),
+    audio_transcript: z.string().optional(),
 
     video_file: z.any().optional(),
-    video_description: z.string().max(800).optional().or(z.literal('')),
+    video_description: z.string().optional(),
   })
   .superRefine((data, ctx) => {
-    const hasText = !!data.description_text && data.description_text.trim().length > 0
-    const hasAudio = data.audio_file instanceof File
-    const hasImage = data.image_file instanceof File
-    const hasVideo = data.video_file instanceof File
+    const imageFile = (data.image_file as FileList | undefined)?.[0]
+    const audioFile = (data.audio_file as FileList | undefined)?.[0]
+    const videoFile = (data.video_file as FileList | undefined)?.[0]
 
-    if (!hasText && !hasAudio && !hasImage && !hasVideo) {
+    const hasAnyFile = !!imageFile || !!audioFile || !!videoFile
+    const hasText = !!(data.description_text && data.description_text.trim().length > 0)
+
+    if (!hasText && !hasAnyFile) {
       ctx.addIssue({
-        code: 'custom',
-        message: 'Envie um relato em texto ou anexe pelo menos um arquivo.',
+        code: z.ZodIssueCode.custom,
         path: ['description_text'],
+        message: 'Envie um relato em texto ou anexe pelo menos um arquivo.',
       })
     }
 
-    if (hasAudio && (!data.audio_transcript || data.audio_transcript.trim().length === 0)) {
+    // Acessibilidade: se anexar, exige descrição
+    if (imageFile && (!data.image_alt || data.image_alt.trim().length < 3)) {
       ctx.addIssue({
-        code: 'custom',
-        message: 'Áudio anexado requer transcrição (acessibilidade).',
-        path: ['audio_transcript'],
-      })
-    }
-
-    if (hasImage && (!data.image_alt || data.image_alt.trim().length === 0)) {
-      ctx.addIssue({
-        code: 'custom',
-        message: 'Imagem anexada requer texto alternativo (acessibilidade).',
+        code: z.ZodIssueCode.custom,
         path: ['image_alt'],
+        message: 'Texto alternativo da imagem é obrigatório (mín. 3 caracteres).',
       })
     }
 
-    if (hasVideo && (!data.video_description || data.video_description.trim().length === 0)) {
+    if (audioFile && (!data.audio_transcript || data.audio_transcript.trim().length < 3)) {
       ctx.addIssue({
-        code: 'custom',
-        message: 'Vídeo anexado requer descrição (acessibilidade).',
-        path: ['video_description'],
+        code: z.ZodIssueCode.custom,
+        path: ['audio_transcript'],
+        message: 'Transcrição do áudio é obrigatória (mín. 3 caracteres).',
       })
+    }
+
+    if (videoFile && (!data.video_description || data.video_description.trim().length < 3)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['video_description'],
+        message: 'Descrição do vídeo é obrigatória (mín. 3 caracteres).',
+      })
+    }
+
+    // Regra: elogio/sugestão/solicitação exigem identificação
+    if (needsIdentification(data.kind)) {
+      if (data.anonymous) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['anonymous'],
+          message: 'Para elogio, sugestão ou solicitação, a identificação é obrigatória (sem anonimato).',
+        })
+      }
+
+      if (!data.contact_name || data.contact_name.trim().length < 3) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['contact_name'],
+          message: 'Informe seu nome (mín. 3 caracteres).',
+        })
+      }
+
+      if (!data.contact_email || data.contact_email.trim().length < 5) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['contact_email'],
+          message: 'Informe um e-mail válido para contato.',
+        })
+      } else {
+        const emailOk = z.string().email().safeParse(data.contact_email).success
+        if (!emailOk) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['contact_email'],
+            message: 'Informe um e-mail válido para contato.',
+          })
+        }
+      }
     }
   })
 
@@ -78,336 +139,440 @@ type FormValues = z.infer<typeof schema>
 
 export function NewManifestationPage() {
   const navigate = useNavigate()
-  const [searchParams] = useSearchParams()
-
-  const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false)
 
-  const draft = useMemo(() => loadDraft(), [])
+  const draft = useMemo(() => loadDraft() || {}, [])
 
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
     mode: 'onBlur',
     defaultValues: {
-      kind: (draft?.kind as ManifestationKind) || 'reclamacao',
-      subject: (draft?.subject as string) || '',
-      description_text: (draft?.description_text as string) || '',
-      anonymous: !!draft?.anonymous,
-      audio_transcript: (draft?.audio_transcript as string) || '',
-      image_alt: (draft?.image_alt as string) || '',
-      video_description: (draft?.video_description as string) || '',
+      kind: (draft.kind as ManifestationKind) || 'reclamacao',
+      subject: draft.subject || '',
+      subject_detail: (draft as any).subject_detail || '',
+      description_text: draft.description_text || '',
+      anonymous: draft.anonymous || false,
+      contact_name: (draft as any).contact_name || '',
+      contact_email: (draft as any).contact_email || '',
+      contact_phone: (draft as any).contact_phone || '',
+      image_alt: draft.image_alt || '',
+      audio_transcript: draft.audio_transcript || '',
+      video_description: draft.video_description || '',
     },
   })
 
-  // Prefill vindo da IZA (query params)
-  useEffect(() => {
-    const kind = searchParams.get('kind') as ManifestationKind | null
-    const subject = searchParams.get('subject')
-    if (kind) form.setValue('kind', kind)
-    if (subject) form.setValue('subject', subject)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  const kind = form.watch('kind')
+  const anonymous = form.watch('anonymous')
 
-  // Salvamento de rascunho (sem arquivos)
   useEffect(() => {
     const sub = form.watch((values) => {
-      saveDraft({
-        kind: values.kind,
-        subject: values.subject,
-        description_text: values.description_text,
-        anonymous: values.anonymous,
-        audio_transcript: values.audio_transcript,
-        image_alt: values.image_alt,
-        video_description: values.video_description,
-      })
+      // salvamos apenas campos serializáveis (sem File)
+      const payload: Partial<ManifestationCreatePayload> = {
+        kind: values.kind as ManifestationKind,
+        subject: values.subject || '',
+        subject_detail: values.subject_detail || '',
+        description_text: values.description_text || '',
+        anonymous: !!values.anonymous,
+        contact_name: values.contact_name || '',
+        contact_email: values.contact_email || '',
+        contact_phone: values.contact_phone || '',
+        image_alt: values.image_alt || '',
+        audio_transcript: values.audio_transcript || '',
+        video_description: values.video_description || '',
+      }
+      saveDraft(payload)
     })
     return () => sub.unsubscribe()
   }, [form])
 
-  const errorsList: ErrorItem[] = useMemo(() => {
-    const e = form.formState.errors
-    const list: ErrorItem[] = []
-
-    if (e.kind?.message) list.push({ fieldId: 'kind', message: String(e.kind.message) })
-    if (e.subject?.message) list.push({ fieldId: 'subject', message: String(e.subject.message) })
-    if (e.description_text?.message) list.push({ fieldId: 'description_text', message: String(e.description_text.message) })
-    if (e.audio_transcript?.message) list.push({ fieldId: 'audio_transcript', message: String(e.audio_transcript.message) })
-    if (e.image_alt?.message) list.push({ fieldId: 'image_alt', message: String(e.image_alt.message) })
-    if (e.video_description?.message) list.push({ fieldId: 'video_description', message: String(e.video_description.message) })
-
-    return list
-  }, [form.formState.errors])
+  // Se o tipo exige identificação, garante que o usuário não fique em modo anônimo
+  useEffect(() => {
+    if (needsIdentification(kind) && anonymous) {
+      form.setValue('anonymous', false, { shouldValidate: true, shouldDirty: true })
+    }
+  }, [kind, anonymous, form])
 
   async function onSubmit(values: FormValues) {
-    setSubmitting(true)
     setSubmitError(null)
+    setSubmitting(true)
 
     try {
       const payload: ManifestationCreatePayload = {
-        kind: values.kind,
+        kind: values.kind as ManifestationKind,
         subject: values.subject,
-        description_text: values.description_text?.trim() ? values.description_text.trim() : undefined,
-        anonymous: values.anonymous,
+        subject_detail: values.subject_detail,
+        description_text: values.description_text?.trim() || undefined,
+        anonymous: !!values.anonymous,
 
-        audio_transcript: values.audio_transcript?.trim() ? values.audio_transcript.trim() : undefined,
-        image_alt: values.image_alt?.trim() ? values.image_alt.trim() : undefined,
-        video_description: values.video_description?.trim() ? values.video_description.trim() : undefined,
+        contact_name: values.contact_name?.trim() || undefined,
+        contact_email: values.contact_email?.trim() || undefined,
+        contact_phone: values.contact_phone?.trim() || undefined,
 
-        audio_file: values.audio_file instanceof File ? values.audio_file : undefined,
-        image_file: values.image_file instanceof File ? values.image_file : undefined,
-        video_file: values.video_file instanceof File ? values.video_file : undefined,
+        image_alt: values.image_alt?.trim() || undefined,
+        audio_transcript: values.audio_transcript?.trim() || undefined,
+        video_description: values.video_description?.trim() || undefined,
+
+        image_file: (values.image_file as FileList | undefined)?.[0],
+        audio_file: (values.audio_file as FileList | undefined)?.[0],
+        video_file: (values.video_file as FileList | undefined)?.[0],
       }
 
       const res = await createManifestation(payload)
       clearDraft()
-      navigate(`/protocolos/${encodeURIComponent(res.protocol)}`)
-    } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : 'Erro ao enviar manifestação')
+      navigate(`/protocolos/${res.protocol}`, {
+        state: {
+          fromSubmit: true,
+          initialResponseSlaDays: res.initial_response_sla_days,
+        },
+      })
+    } catch (err: any) {
+      setSubmitError(err?.message || 'Não foi possível enviar a manifestação.')
     } finally {
       setSubmitting(false)
     }
   }
 
+  const errors = form.formState.errors
+
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-extrabold tracking-tight text-slate-50">Registrar manifestação</h1>
-          <p className="mt-1 text-sm text-slate-200/70">
-            Campos com anexos exigem descrição alternativa.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Badge variant="info">Protocolo automático</Badge>
-          <Badge variant="default">Opção de anonimato</Badge>
-        </div>
-      </div>
+      <header className="surface p-6">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="info">Formulário</Badge>
+              <Badge>Inclusão e acessibilidade</Badge>
+            </div>
+            <h1 className="mt-3 text-2xl font-extrabold tracking-tight text-[rgb(var(--c-text))]">
+              Nova manifestação
+            </h1>
+            <p className="mt-2 max-w-3xl text-sm leading-relaxed text-[rgba(var(--c-text),0.80)]">
+              Preencha com calma. Use frases simples e inclua <span className="font-semibold">o quê, onde e quando</span>. Se anexar arquivos, descreva-os para garantir acessibilidade.
+            </p>
+          </div>
 
-      <ErrorSummary errors={errorsList} />
+          <div className="glass max-w-md p-4">
+            <div className="flex items-start gap-2">
+              <Info className="mt-0.5 h-4 w-4" aria-hidden="true" />
+              <p className="text-sm leading-relaxed text-[rgba(var(--c-text),0.82)]">
+                Precisa de ajuda? Use a <span className="font-semibold">IZA</span> no canto inferior direito. Você pode falar por áudio e ela responde por voz.
+              </p>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      {/* Erros (WCAG) */}
+      <ErrorSummary errors={errors} />
 
       {submitError && (
-        <div className="rounded-xl border border-red-400/20 bg-red-500/10 p-4 text-sm text-red-100">
-          {submitError}
+        <div className="rounded-xl border border-red-600/30 bg-red-600/10 px-4 py-3 text-sm text-red-800">
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="mt-0.5 h-4 w-4" aria-hidden="true" />
+            <p className="leading-relaxed">
+              <span className="font-semibold">Falha ao enviar:</span> {submitError}
+            </p>
+          </div>
         </div>
       )}
 
-      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4" noValidate>
+        {/* 1) Identificação */}
         <Card>
-          <CardTitle>1) Identificação</CardTitle>
-          <CardDescription>Escolha o tipo e o assunto principal.</CardDescription>
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <Badge variant="info">1</Badge>
+              <CardTitle>Identificação</CardTitle>
+            </div>
+            <CardDescription>
+              Escolha o tipo e o assunto principal. O campo “Descreva o tema” ajuda o encaminhamento.
+            </CardDescription>
+          </CardHeader>
 
-          <div className="mt-5 grid gap-4 md:grid-cols-2">
+          <div className="grid gap-4 md:grid-cols-2">
             <div>
-              <fieldset id="kind" className="space-y-2">
-                <legend className="text-sm font-semibold text-slate-50">Tipo de manifestação</legend>
-
-                <div className="grid grid-cols-2 gap-2">
-                  {(
-                    [
-                      { value: 'reclamacao', label: 'Reclamação' },
-                      { value: 'denuncia', label: 'Denúncia' },
-                      { value: 'sugestao', label: 'Sugestão' },
-                      { value: 'elogio', label: 'Elogio' },
-                      { value: 'solicitacao', label: 'Solicitação' },
-                    ] as const
-                  ).map((o) => (
-                    <label
-                      key={o.value}
-                      className="flex cursor-pointer items-center gap-2 rounded-xl border border-white/10 bg-white/5 p-3 text-sm text-slate-50 hover:bg-white/10"
-                    >
-                      <input
-                        type="radio"
-                        value={o.value}
-                        {...form.register('kind')}
-                        className="h-4 w-4"
-                      />
-                      {o.label}
-                    </label>
-                  ))}
-                </div>
-
-                {form.formState.errors.kind?.message && (
-                  <p className="mt-2 text-sm text-red-200">{String(form.formState.errors.kind.message)}</p>
-                )}
-              </fieldset>
+              <label className="text-sm font-semibold text-[rgb(var(--c-text))]" htmlFor="kind">
+                Tipo de manifestação
+              </label>
+              <select
+                id="kind"
+                {...form.register('kind')}
+                className="mt-2 w-full rounded-xl border border-[rgba(var(--c-border),0.85)] bg-[rgb(var(--c-surface))] px-4 py-3 text-base text-[rgb(var(--c-text))]"
+              >
+                {KINDS.map((k) => (
+                  <option key={k.value} value={k.value}>
+                    {k.label}
+                  </option>
+                ))}
+              </select>
+              {errors.kind && <p className="mt-2 text-sm text-red-700">{errors.kind.message}</p>}
             </div>
 
             <div>
-              <label htmlFor="subject" className="text-sm font-semibold text-slate-50">
+              <label className="text-sm font-semibold text-[rgb(var(--c-text))]" htmlFor="subject">
                 Assunto
               </label>
-              <p className="mt-1 text-xs text-slate-200/60">
-                Ex.: Infraestrutura (buraco), Saúde (atendimento), Segurança (ocorrência), etc.
+              <Input
+                id="subject"
+                placeholder={SUBJECT_EXAMPLES[0]}
+                {...form.register('subject')}
+                className="mt-2"
+              />
+              <p className="mt-2 text-xs text-[rgba(var(--c-text),0.70)]">
+                Exemplos: {SUBJECT_EXAMPLES.join(' · ')}
               </p>
-              <div className="mt-2">
-                <Input id="subject" placeholder="Descreva o tema" {...form.register('subject')} />
-                {form.formState.errors.subject?.message && (
-                  <p className="mt-2 text-sm text-red-200">{String(form.formState.errors.subject.message)}</p>
-                )}
-              </div>
+              {errors.subject && <p className="mt-2 text-sm text-red-700">{errors.subject.message}</p>}
             </div>
           </div>
-        </Card>
 
-        <Card>
-          <CardTitle>2) Relato e anexos</CardTitle>
-          <CardDescription>
-            Você pode enviar por texto e/ou anexar áudio, imagem e vídeo. Para acessibilidade, anexos exigem descrição.
-          </CardDescription>
+          <div className="mt-4">
+            <label className="text-sm font-semibold text-[rgb(var(--c-text))]" htmlFor="subject_detail">
+              Descreva o tema
+            </label>
+            <Input
+              id="subject_detail"
+              placeholder="Informe o assunto com um pouco mais de detalhe (mín. 3 caracteres)."
+              {...form.register('subject_detail')}
+              className="mt-2"
+            />
+            {errors.subject_detail && (
+              <p className="mt-2 text-sm text-red-700">{errors.subject_detail.message}</p>
+            )}
+          </div>
 
-          <div className="mt-5 space-y-6">
-            <div>
-              <label htmlFor="description_text" className="text-sm font-semibold text-slate-50">
-                Relato em texto
-              </label>
-              <p className="mt-1 text-xs text-slate-200/60">
-                Escreva o que aconteceu (o quê, onde, quando) e o impacto.
-              </p>
-              <div className="mt-2">
-                <Textarea id="description_text" rows={5} placeholder="Descreva sua manifestação" {...form.register('description_text')} />
-                {form.formState.errors.description_text?.message && (
-                  <p className="mt-2 text-sm text-red-200">{String(form.formState.errors.description_text.message)}</p>
-                )}
+          {/* Identificação obrigatória */}
+          {needsIdentification(kind) && (
+            <div className="mt-5 rounded-xl border border-[rgba(var(--c-primary),0.25)] bg-[rgba(var(--c-primary),0.08)] p-4">
+              <div className="flex items-start gap-2">
+                <Info className="mt-0.5 h-4 w-4" aria-hidden="true" />
+                <div>
+                  <p className="text-sm font-semibold text-[rgb(var(--c-text))]">
+                    Para {kind === 'elogio' ? 'elogio' : kind === 'sugestao' ? 'sugestão' : 'solicitação'}, a identificação é obrigatória.
+                  </p>
+                  <p className="mt-1 text-sm text-[rgba(var(--c-text),0.80)]">
+                    Isso permite retorno e acompanhamento. O envio anônimo fica desabilitado.
+                  </p>
+                </div>
               </div>
-            </div>
 
-            {/* Imagem */}
-            <div className="grid gap-4 md:grid-cols-2">
-              <div>
-                <label className="text-sm font-semibold text-slate-50">Anexar imagem</label>
-                <p className="mt-1 text-xs text-slate-200/60">Opcional. Formatos comuns: JPG/PNG.</p>
-                <div className="mt-2">
-                  <input
-                    type="file"
-                    accept="image/*"
-                    className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-50 file:mr-4 file:rounded-lg file:border-0 file:bg-white/10 file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-slate-50 hover:bg-white/10"
-                    onChange={(e) => form.setValue('image_file', e.target.files?.[0])}
+              <div className="mt-4 grid gap-4 md:grid-cols-2">
+                <div>
+                  <label className="text-sm font-semibold text-[rgb(var(--c-text))]" htmlFor="contact_name">
+                    Seu nome
+                  </label>
+                  <Input id="contact_name" {...form.register('contact_name')} className="mt-2" />
+                  {errors.contact_name && (
+                    <p className="mt-2 text-sm text-red-700">{errors.contact_name.message}</p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="text-sm font-semibold text-[rgb(var(--c-text))]" htmlFor="contact_email">
+                    E-mail
+                  </label>
+                  <Input
+                    id="contact_email"
+                    type="email"
+                    inputMode="email"
+                    placeholder="seuemail@exemplo.com"
+                    {...form.register('contact_email')}
+                    className="mt-2"
+                  />
+                  {errors.contact_email && (
+                    <p className="mt-2 text-sm text-red-700">{errors.contact_email.message}</p>
+                  )}
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="text-sm font-semibold text-[rgb(var(--c-text))]" htmlFor="contact_phone">
+                    Telefone (opcional)
+                  </label>
+                  <Input
+                    id="contact_phone"
+                    inputMode="tel"
+                    placeholder="(61) 9XXXX-XXXX"
+                    {...form.register('contact_phone')}
+                    className="mt-2"
                   />
                 </div>
               </div>
-              <div>
-                <label htmlFor="image_alt" className="text-sm font-semibold text-slate-50">
-                  Texto alternativo da imagem (obrigatório se anexar)
-                </label>
-                <p className="mt-1 text-xs text-slate-200/60">
-                  Ex.: “Foto de buraco na Rua X, em frente ao nº 120, com cones ao lado.”
-                </p>
-                <div className="mt-2">
-                  <Input id="image_alt" placeholder="Descreva a imagem" {...form.register('image_alt')} />
-                  {form.formState.errors.image_alt?.message && (
-                    <p className="mt-2 text-sm text-red-200">{String(form.formState.errors.image_alt.message)}</p>
-                  )}
-                </div>
-              </div>
+            </div>
+          )}
+
+          {/* Anônimo */}
+          <div className="mt-5">
+            <label className="flex items-start gap-3">
+              <input
+                type="checkbox"
+                {...form.register('anonymous')}
+                disabled={needsIdentification(kind)}
+                className="mt-1 h-5 w-5 rounded border-[rgba(var(--c-border),0.85)]"
+              />
+              <span>
+                <span className="block text-sm font-semibold text-[rgb(var(--c-text))]">
+                  Enviar como anônimo
+                </span>
+                <span className="block text-sm text-[rgba(var(--c-text),0.78)]">
+                  Não solicitaremos dados pessoais. Ainda assim, descreva bem o local e o contexto.
+                </span>
+              </span>
+            </label>
+            {errors.anonymous && <p className="mt-2 text-sm text-red-700">{errors.anonymous.message}</p>}
+          </div>
+        </Card>
+
+        {/* 2) Relato e anexos */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <Badge variant="info">2</Badge>
+              <CardTitle>Relato e anexos</CardTitle>
+            </div>
+            <CardDescription>
+              Você pode enviar por texto e/ou anexar áudio, imagem e vídeo. Para acessibilidade, anexos exigem descrição.
+            </CardDescription>
+          </CardHeader>
+
+          <div>
+            <label className="text-sm font-semibold text-[rgb(var(--c-text))]" htmlFor="description_text">
+              Relato em texto
+            </label>
+            <Textarea
+              id="description_text"
+              rows={6}
+              placeholder="Escreva o que aconteceu (o quê, onde, quando) e o impacto."
+              {...form.register('description_text')}
+              className="mt-2"
+            />
+            {errors.description_text && (
+              <p className="mt-2 text-sm text-red-700">{errors.description_text.message as any}</p>
+            )}
+          </div>
+
+          <div className="mt-6 grid gap-4 md:grid-cols-3">
+            {/* Imagem */}
+            <div className="rounded-xl border border-[rgba(var(--c-border),0.75)] bg-[rgba(var(--c-surface),0.75)] p-4">
+              <p className="text-sm font-extrabold text-[rgb(var(--c-text))]">Imagem</p>
+              <p className="mt-1 text-xs text-[rgba(var(--c-text),0.70)]">Opcional. JPG/PNG.</p>
+              <label className="mt-3 flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-[rgba(var(--c-border),0.90)] bg-[rgba(var(--c-surface),0.85)] px-3 py-3 text-sm font-semibold text-[rgb(var(--c-text))] hover:bg-[rgba(var(--c-border),0.18)]">
+                <Paperclip className="h-4 w-4" aria-hidden="true" />
+                Anexar imagem
+                <input type="file" accept="image/*" className="sr-only" {...form.register('image_file')} />
+              </label>
+
+              <label className="mt-3 block text-xs font-semibold text-[rgb(var(--c-text))]" htmlFor="image_alt">
+                Texto alternativo da imagem (obrigatório se anexar)
+              </label>
+              <Input
+                id="image_alt"
+                placeholder='Ex.: "Foto de buraco na Rua X, em frente ao nº 120, com cones ao lado."'
+                {...form.register('image_alt')}
+                className="mt-2"
+              />
+              {errors.image_alt && <p className="mt-2 text-sm text-red-700">{errors.image_alt.message}</p>}
             </div>
 
             {/* Áudio */}
-            <div className="grid gap-4 md:grid-cols-2">
-              <div>
-                <label className="text-sm font-semibold text-slate-50">Anexar áudio</label>
-                <p className="mt-1 text-xs text-slate-200/60">Opcional. Formatos comuns: m4a/mp3/wav.</p>
-                <div className="mt-2">
-                  <input
-                    type="file"
-                    accept="audio/*"
-                    className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-50 file:mr-4 file:rounded-lg file:border-0 file:bg-white/10 file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-slate-50 hover:bg-white/10"
-                    onChange={(e) => form.setValue('audio_file', e.target.files?.[0])}
-                  />
-                </div>
-              </div>
-              <div>
-                <label htmlFor="audio_transcript" className="text-sm font-semibold text-slate-50">
-                  Transcrição do áudio (obrigatório se anexar)
-                </label>
-                <p className="mt-1 text-xs text-slate-200/60">
-                  A transcrição garante acessibilidade e facilita encaminhamento.
-                </p>
-                <div className="mt-2">
-                  <Textarea id="audio_transcript" rows={3} placeholder="Digite a transcrição" {...form.register('audio_transcript')} />
-                  {form.formState.errors.audio_transcript?.message && (
-                    <p className="mt-2 text-sm text-red-200">{String(form.formState.errors.audio_transcript.message)}</p>
-                  )}
-                </div>
-              </div>
+            <div className="rounded-xl border border-[rgba(var(--c-border),0.75)] bg-[rgba(var(--c-surface),0.75)] p-4">
+              <p className="text-sm font-extrabold text-[rgb(var(--c-text))]">Áudio</p>
+              <p className="mt-1 text-xs text-[rgba(var(--c-text),0.70)]">Opcional. mp3/m4a/wav.</p>
+              <label className="mt-3 flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-[rgba(var(--c-border),0.90)] bg-[rgba(var(--c-surface),0.85)] px-3 py-3 text-sm font-semibold text-[rgb(var(--c-text))] hover:bg-[rgba(var(--c-border),0.18)]">
+                <Paperclip className="h-4 w-4" aria-hidden="true" />
+                Anexar áudio
+                <input type="file" accept="audio/*" className="sr-only" {...form.register('audio_file')} />
+              </label>
+
+              <label className="mt-3 block text-xs font-semibold text-[rgb(var(--c-text))]" htmlFor="audio_transcript">
+                Transcrição do áudio (obrigatório se anexar)
+              </label>
+              <Textarea
+                id="audio_transcript"
+                rows={3}
+                placeholder="A transcrição garante acessibilidade e facilita encaminhamento."
+                {...form.register('audio_transcript')}
+                className="mt-2"
+              />
+              {errors.audio_transcript && (
+                <p className="mt-2 text-sm text-red-700">{errors.audio_transcript.message}</p>
+              )}
             </div>
 
             {/* Vídeo */}
-            <div className="grid gap-4 md:grid-cols-2">
-              <div>
-                <label className="text-sm font-semibold text-slate-50">Anexar vídeo</label>
-                <p className="mt-1 text-xs text-slate-200/60">Opcional. Formatos comuns: mp4/mov.</p>
-                <div className="mt-2">
-                  <input
-                    type="file"
-                    accept="video/*"
-                    className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-50 file:mr-4 file:rounded-lg file:border-0 file:bg-white/10 file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-slate-50 hover:bg-white/10"
-                    onChange={(e) => form.setValue('video_file', e.target.files?.[0])}
-                  />
-                </div>
-              </div>
-              <div>
-                <label htmlFor="video_description" className="text-sm font-semibold text-slate-50">
-                  Descrição do vídeo (obrigatório se anexar)
-                </label>
-                <p className="mt-1 text-xs text-slate-200/60">
-                  Ex.: “Vídeo mostrando poste apagado na esquina, à noite, por ~10s.”
-                </p>
-                <div className="mt-2">
-                  <Textarea id="video_description" rows={3} placeholder="Descreva o vídeo" {...form.register('video_description')} />
-                  {form.formState.errors.video_description?.message && (
-                    <p className="mt-2 text-sm text-red-200">{String(form.formState.errors.video_description.message)}</p>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            <div className="rounded-xl border border-white/10 bg-white/5 p-4">
-              <label className="flex items-start gap-3">
-                <input type="checkbox" className="mt-1 h-4 w-4" {...form.register('anonymous')} />
-                <span>
-                  <span className="block text-sm font-semibold text-slate-50">Enviar como anônimo</span>
-                  <span className="block text-xs text-slate-200/60">
-                    Não solicitaremos dados pessoais. Ainda assim, descreva o local e contexto para viabilizar análise.
-                  </span>
-                </span>
+            <div className="rounded-xl border border-[rgba(var(--c-border),0.75)] bg-[rgba(var(--c-surface),0.75)] p-4">
+              <p className="text-sm font-extrabold text-[rgb(var(--c-text))]">Vídeo</p>
+              <p className="mt-1 text-xs text-[rgba(var(--c-text),0.70)]">Opcional. mp4/mov.</p>
+              <label className="mt-3 flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-[rgba(var(--c-border),0.90)] bg-[rgba(var(--c-surface),0.85)] px-3 py-3 text-sm font-semibold text-[rgb(var(--c-text))] hover:bg-[rgba(var(--c-border),0.18)]">
+                <Paperclip className="h-4 w-4" aria-hidden="true" />
+                Anexar vídeo
+                <input type="file" accept="video/*" className="sr-only" {...form.register('video_file')} />
               </label>
+
+              <label className="mt-3 block text-xs font-semibold text-[rgb(var(--c-text))]" htmlFor="video_description">
+                Descrição do vídeo (obrigatório se anexar)
+              </label>
+              <Input
+                id="video_description"
+                placeholder='Ex.: "Vídeo mostrando poste apagado na esquina, à noite, por ~10s."'
+                {...form.register('video_description')}
+                className="mt-2"
+              />
+              {errors.video_description && (
+                <p className="mt-2 text-sm text-red-700">{errors.video_description.message}</p>
+              )}
+            </div>
+          </div>
+
+          <div className="mt-6 rounded-xl border border-[rgba(var(--c-success),0.25)] bg-[rgba(var(--c-success),0.08)] p-4">
+            <div className="flex items-start gap-2">
+              <CheckCircle2 className="mt-0.5 h-4 w-4" aria-hidden="true" />
+              <p className="text-sm leading-relaxed text-[rgba(var(--c-text),0.85)]">
+                Ao enviar, você receberá um protocolo automaticamente.
+                <span className="font-semibold"> Prazo inicial de resposta: 10 dias</span>.
+              </p>
             </div>
           </div>
         </Card>
 
+        {/* 3) Enviar */}
         <Card>
-          <CardTitle>3) Enviar</CardTitle>
-          <CardDescription>
-            Ao enviar, você receberá um protocolo automaticamente.
-          </CardDescription>
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <Badge variant="info">3</Badge>
+              <CardTitle>Enviar</CardTitle>
+            </div>
+            <CardDescription>Revise antes de enviar. Você pode limpar o rascunho se quiser recomeçar.</CardDescription>
+          </CardHeader>
 
-          <div className="mt-5 flex flex-wrap items-center gap-3">
-            <Button type="submit" disabled={submitting}>
+          <div className="flex flex-wrap gap-3">
+            <Button type="submit" className="px-6" disabled={submitting}>
               {submitting ? 'Enviando…' : 'Enviar e gerar protocolo'}
             </Button>
             <Button
               type="button"
               variant="secondary"
+              className="px-6"
               onClick={() => {
-                clearDraft()
                 form.reset({
                   kind: 'reclamacao',
                   subject: '',
+                  subject_detail: '',
                   description_text: '',
                   anonymous: false,
-                  audio_transcript: '',
+                  contact_name: '',
+                  contact_email: '',
+                  contact_phone: '',
                   image_alt: '',
+                  audio_transcript: '',
                   video_description: '',
                 })
+                clearDraft()
+                setSubmitError(null)
               }}
             >
               Limpar rascunho
             </Button>
           </div>
-
-          <p className="mt-3 text-xs text-slate-200/60">
-            Observação: arquivos (mídias) não ficam no rascunho. Se você recarregar a página, precisará selecionar novamente os anexos.
-          </p>
         </Card>
       </form>
     </div>

@@ -1,129 +1,214 @@
-import { useEffect, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { useEffect, useMemo, useState } from 'react'
+import { Link, useLocation, useParams } from 'react-router-dom'
+import { CheckCircle2, Copy, Download, Info } from 'lucide-react'
+
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
-import { Card, CardDescription, CardTitle } from '@/components/ui/Card'
-import { Input } from '@/components/ui/Input'
-import { buildAttachmentUrl, getManifestation } from '@/services/api/manifestations'
+import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
+import { getManifestation, buildAttachmentUrl } from '@/services/api/manifestations'
 import type { ManifestationRecord } from '@/types/manifestation'
 
+type LocationState = {
+  fromSubmit?: boolean
+  initialResponseSlaDays?: number
+}
+
+function kindLabel(kind: string) {
+  const map: Record<string, string> = {
+    reclamacao: 'Reclamação',
+    denuncia: 'Denúncia',
+    sugestao: 'Sugestão',
+    elogio: 'Elogio',
+    solicitacao: 'Solicitação',
+  }
+  return map[kind] || kind
+}
+
 export function ProtocolPage() {
-  const navigate = useNavigate()
-  const { protocol: protocolParam } = useParams()
-  const [protocol, setProtocol] = useState(protocolParam || '')
+  const { protocol = '' } = useParams()
+  const location = useLocation()
+  const state = (location.state || {}) as LocationState
+
+  const [record, setRecord] = useState<ManifestationRecord | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [record, setRecord] = useState<ManifestationRecord | null>(null)
+  const [copied, setCopied] = useState(false)
+
+  const slaDays = useMemo(() => state.initialResponseSlaDays ?? 10, [state.initialResponseSlaDays])
 
   useEffect(() => {
-    if (!protocolParam) return
-    setLoading(true)
-    setError(null)
+    let mounted = true
 
-    getManifestation(protocolParam)
-      .then((data) => {
+    async function run() {
+      setLoading(true)
+      setError(null)
+      try {
+        const data = await getManifestation(protocol)
+        if (!mounted) return
         setRecord(data)
-      })
-      .catch((e) => setError(e instanceof Error ? e.message : 'Erro ao consultar protocolo'))
-      .finally(() => setLoading(false))
-  }, [protocolParam])
+      } catch (e: any) {
+        if (!mounted) return
+        setError(e?.message || 'Não foi possível carregar o protocolo.')
+      } finally {
+        if (mounted) setLoading(false)
+      }
+    }
+
+    if (protocol) run()
+
+    return () => {
+      mounted = false
+    }
+  }, [protocol])
+
+  async function copyProtocol() {
+    try {
+      await navigator.clipboard.writeText(protocol)
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 1200)
+    } catch {
+      // ignore
+    }
+  }
+
+  if (loading) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Carregando…</CardTitle>
+          <CardDescription>Buscando dados do protocolo.</CardDescription>
+        </CardHeader>
+      </Card>
+    )
+  }
+
+  if (error || !record) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Não foi possível carregar</CardTitle>
+          <CardDescription>{error || 'Protocolo não encontrado.'}</CardDescription>
+        </CardHeader>
+        <Link to="/">
+          <Button className="mt-2">Voltar</Button>
+        </Link>
+      </Card>
+    )
+  }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-extrabold tracking-tight text-slate-50">Acompanhar protocolo</h1>
-          <p className="mt-1 text-sm text-slate-200/70">
-            Consulte o status da sua manifestação.
-          </p>
-        </div>
-
-        <Link
-          to="/manifestacoes/nova"
-          className="inline-flex items-center justify-center rounded-xl bg-white/10 px-4 py-2 text-sm font-semibold text-slate-50 ring-1 ring-white/10 hover:bg-white/15"
-        >
-          Registrar nova
-        </Link>
-      </div>
-
-      <Card>
-        <CardTitle>Consultar</CardTitle>
-        <CardDescription>Digite o protocolo recebido (ex.: DF-20250116-ABC123).</CardDescription>
-
-        <div className="mt-4 flex flex-wrap items-center gap-3">
-          <Input value={protocol} onChange={(e) => setProtocol(e.target.value)} placeholder="DF-20250116-ABC123" />
-          <Button type="button" onClick={() => navigate(`/protocolos/${encodeURIComponent(protocol.trim())}`)}>
-            Consultar
-          </Button>
-        </div>
-      </Card>
-
-      {loading && <div className="glass p-6 shimmer">Carregando…</div>}
-
-      {error && (
-        <div className="rounded-xl border border-red-400/20 bg-red-500/10 p-4 text-sm text-red-100">
-          {error}
+    <div className="space-y-4">
+      {/* Sucesso */}
+      {state.fromSubmit && (
+        <div className="rounded-2xl border border-[rgba(var(--c-success),0.25)] bg-[rgba(var(--c-success),0.10)] p-5">
+          <div className="flex items-start gap-3">
+            <CheckCircle2 className="mt-0.5 h-5 w-5" aria-hidden="true" />
+            <div>
+              <p className="text-base font-extrabold text-[rgb(var(--c-text))]">Manifestação enviada com sucesso.</p>
+              <p className="mt-1 text-sm text-[rgba(var(--c-text),0.82)]">
+                Protocolo gerado automaticamente. <span className="font-semibold">Prazo inicial de resposta: {slaDays} dias</span>.
+              </p>
+            </div>
+          </div>
         </div>
       )}
 
-      {record && (
-        <Card>
+      {/* Resumo do protocolo */}
+      <Card>
+        <CardHeader>
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <CardTitle>Protocolo {record.protocol}</CardTitle>
-              <CardDescription>Criado em {new Date(record.created_at).toLocaleString()}</CardDescription>
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant="info">Protocolo</Badge>
+                <Badge>{kindLabel(record.kind)}</Badge>
+                {record.anonymous ? <Badge variant="warning">Anônimo</Badge> : <Badge variant="success">Identificado</Badge>}
+              </div>
+              <CardTitle className="mt-3">{record.protocol}</CardTitle>
+              <CardDescription>
+                Aberto em {new Date(record.created_at).toLocaleString()} · Status: {record.status}
+              </CardDescription>
             </div>
-            <Badge variant={record.status === 'Respondido' ? 'success' : record.status === 'Em análise' ? 'warning' : 'info'}>
-              {record.status}
-            </Badge>
+
+            <div className="flex gap-2">
+              <Button type="button" variant="secondary" onClick={copyProtocol} aria-label="Copiar número do protocolo">
+                <Copy className="h-4 w-4" aria-hidden="true" />
+                {copied ? 'Copiado' : 'Copiar'}
+              </Button>
+              <Link to="/manifestacoes/nova">
+                <Button type="button">Nova manifestação</Button>
+              </Link>
+            </div>
+          </div>
+        </CardHeader>
+
+        <div className="space-y-4">
+          <div className="rounded-xl border border-[rgba(var(--c-border),0.70)] bg-[rgba(var(--c-surface),0.70)] p-4">
+            <p className="text-sm font-extrabold text-[rgb(var(--c-text))]">Assunto</p>
+            <p className="mt-1 text-sm text-[rgba(var(--c-text),0.82)]">{record.subject}</p>
+            <p className="mt-2 text-xs font-semibold text-[rgba(var(--c-text),0.70)]">Descreva o tema</p>
+            <p className="mt-1 text-sm text-[rgba(var(--c-text),0.82)]">{record.subject_detail}</p>
           </div>
 
-          <dl className="mt-6 grid gap-4 text-sm md:grid-cols-2">
-            <div className="rounded-xl bg-white/5 p-4 ring-1 ring-white/10">
-              <dt className="text-slate-200/60">Tipo</dt>
-              <dd className="mt-1 font-semibold text-slate-50">{record.kind}</dd>
-            </div>
-            <div className="rounded-xl bg-white/5 p-4 ring-1 ring-white/10">
-              <dt className="text-slate-200/60">Assunto</dt>
-              <dd className="mt-1 font-semibold text-slate-50">{record.subject}</dd>
-            </div>
+          <div className="rounded-xl border border-[rgba(var(--c-border),0.70)] bg-[rgba(var(--c-surface),0.70)] p-4">
+            <p className="text-sm font-extrabold text-[rgb(var(--c-text))]">Relato</p>
+            <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-[rgba(var(--c-text),0.82)]">
+              {record.description_text}
+            </p>
+          </div>
 
-            <div className="rounded-xl bg-white/5 p-4 ring-1 ring-white/10 md:col-span-2">
-              <dt className="text-slate-200/60">Relato</dt>
-              <dd className="mt-1 whitespace-pre-wrap text-slate-50">
-                {record.description_text || '(Sem relato em texto)'}
-              </dd>
-            </div>
-          </dl>
-
-          {record.attachments.length > 0 && (
-            <div className="mt-6">
-              <h3 className="text-sm font-semibold text-slate-50">Anexos</h3>
-              <ul className="mt-2 space-y-2 text-sm">
-                {record.attachments.map((a) => (
-                  <li key={a.filename} className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-white/5 p-3 ring-1 ring-white/10">
-                    <span className="text-slate-50">
-                      {a.filename} <span className="text-slate-200/60">({Math.round(a.bytes / 1024)} KB)</span>
-                    </span>
-                    <a
-                      className="text-blue-200 underline underline-offset-2 hover:text-white"
-                      href={buildAttachmentUrl(record.protocol, a.filename)}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      Baixar
-                    </a>
-                  </li>
-                ))}
-              </ul>
-
-              <div className="mt-3 text-xs text-slate-200/60">
-                Para acessibilidade, anexos devem ter descrição/transcrição.
+          {!record.anonymous && (record.contact_email || record.contact_name) && (
+            <div className="rounded-xl border border-[rgba(var(--c-primary),0.18)] bg-[rgba(var(--c-primary),0.06)] p-4">
+              <div className="flex items-start gap-2">
+                <Info className="mt-0.5 h-4 w-4" aria-hidden="true" />
+                <div>
+                  <p className="text-sm font-extrabold text-[rgb(var(--c-text))]">Identificação</p>
+                  <p className="mt-1 text-sm text-[rgba(var(--c-text),0.82)]">
+                    {record.contact_name || '—'}
+                    {record.contact_email ? ` · ${record.contact_email}` : ''}
+                    {record.contact_phone ? ` · ${record.contact_phone}` : ''}
+                  </p>
+                </div>
               </div>
             </div>
           )}
-        </Card>
-      )}
+
+          {/* Anexos */}
+          <div className="rounded-xl border border-[rgba(var(--c-border),0.70)] bg-[rgba(var(--c-surface),0.70)] p-4">
+            <p className="text-sm font-extrabold text-[rgb(var(--c-text))]">Anexos</p>
+            {record.attachments.length === 0 ? (
+              <p className="mt-2 text-sm text-[rgba(var(--c-text),0.75)]">Nenhum anexo enviado.</p>
+            ) : (
+              <ul className="mt-3 space-y-3">
+                {record.attachments.map((att) => (
+                  <li key={att.id} className="rounded-xl border border-[rgba(var(--c-border),0.70)] bg-[rgb(var(--c-surface))] p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <p className="text-sm font-extrabold text-[rgb(var(--c-text))]">
+                          {att.field.toUpperCase()} · {att.filename}
+                        </p>
+                        <p className="mt-1 text-xs text-[rgba(var(--c-text),0.70)]">
+                          {att.bytes ? `${Math.round(att.bytes / 1024)} KB` : ''}
+                          {att.accessibility_text ? ` · Descrição: ${att.accessibility_text}` : ''}
+                        </p>
+                      </div>
+                      <a href={buildAttachmentUrl(record.protocol, att)} target="_blank" rel="noreferrer">
+                        <Button type="button" variant="secondary" aria-label={`Baixar ${att.filename}`}>
+                          <Download className="h-4 w-4" aria-hidden="true" />
+                          Baixar
+                        </Button>
+                      </a>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          <p className="text-xs text-[rgba(var(--c-text),0.65)]">
+            Prazo inicial de resposta: {slaDays} dias. Este prazo pode variar conforme análise e encaminhamento.
+          </p>
+        </div>
+      </Card>
     </div>
   )
 }

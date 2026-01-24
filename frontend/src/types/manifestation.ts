@@ -1,45 +1,62 @@
-export type ManifestationKind = 'reclamacao' | 'denuncia' | 'sugestao' | 'elogio' | 'solicitacao'
+export type ManifestationKind =
+  | 'reclamacao'
+  | 'denuncia'
+  | 'sugestao'
+  | 'elogio'
+  | 'solicitacao'
 
-export type AttachmentMeta = {
-  field: string
+export type AttachmentField = 'image' | 'audio' | 'video'
+
+export interface AttachmentOut {
+  id: string
+  field: AttachmentField
   filename: string
   content_type: string
   bytes: number
+  accessibility_text?: string | null
+  download_url?: string | null
 }
 
-export type ManifestationCreatePayload = {
+export interface ManifestationCreatePayload {
   kind: ManifestationKind
   subject: string
+  subject_detail: string
   description_text?: string
-  anonymous?: boolean
-
-  audio_transcript?: string
-  image_alt?: string
-  video_description?: string
-
-  audio_file?: File | null
-  image_file?: File | null
-  video_file?: File | null
-}
-
-export type ManifestationCreateResponse = {
-  protocol: string
-  created_at: string
-}
-
-export type ManifestationRecord = {
-  protocol: string
-  created_at: string
-  status: 'Recebido' | 'Em análise' | 'Respondido'
-
-  kind: ManifestationKind
-  subject: string
-  description_text?: string | null
   anonymous: boolean
 
-  audio_transcript?: string | null
-  image_alt?: string | null
-  video_description?: string | null
+  contact_name?: string
+  contact_email?: string
+  contact_phone?: string
 
-  attachments: AttachmentMeta[]
+  // Acessibilidade (se anexar)
+  image_alt?: string
+  audio_transcript?: string
+  video_description?: string
+
+  // Uploads
+  image_file?: File
+  audio_file?: File
+  video_file?: File
+}
+
+export interface ManifestationCreateResponse {
+  protocol: string
+  initial_response_sla_days: number
+}
+
+export interface ManifestationRecord {
+  protocol: string
+  created_at: string
+  status: string
+  kind: ManifestationKind
+  subject: string
+  subject_detail: string
+  description_text: string
+  anonymous: boolean
+
+  contact_name?: string | null
+  contact_email?: string | null
+  contact_phone?: string | null
+
+  attachments: AttachmentOut[]
 }
