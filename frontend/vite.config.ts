@@ -24,8 +24,8 @@ export default defineConfig(({ mode }) => {
             'PWA acessível para registro de manifestações por texto, áudio, imagem e vídeo, com protocolo e opção de anonimato.',
           start_url: '/',
           display: 'standalone',
-          background_color: '#0B1220',
-          theme_color: '#2563EB',
+          background_color: '#EFEFEF',
+          theme_color: '#0071BC',
           icons: [
             {
               src: '/icons/icon.svg',

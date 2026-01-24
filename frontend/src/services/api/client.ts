@@ -15,6 +15,7 @@ export async function apiFetch(path: string, init?: RequestInit) {
       const data = await res.json()
       if (data?.detail) message = String(data.detail)
       if (data?.message) message = String(data.message)
+      if (data?.error_id) message = `${message} (código: ${String(data.error_id)})`
     } catch {
       // ignore
     }

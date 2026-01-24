@@ -1,6 +1,6 @@
 import type { ManifestationCreatePayload } from '@/types/manifestation'
 
-const KEY = 'participa_df:draft:v1'
+const KEY = 'participa_df:draft:v2'
 
 export function loadDraft(): Partial<ManifestationCreatePayload> | null {
   try {
