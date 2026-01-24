@@ -18,9 +18,14 @@ export function OfflineBanner() {
   if (online) return null
 
   return (
-    <div className="mx-auto mb-4 flex max-w-5xl items-center gap-2 rounded-xl border border-amber-400/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
-      <WifiOff className="h-4 w-4" aria-hidden="true" />
-      Você está offline. Você ainda pode preencher o formulário; o envio pode falhar até reconectar.
+    <div className="mx-auto mb-4 flex max-w-5xl items-start gap-2 rounded-xl border border-[rgba(var(--c-warning),0.40)] bg-[rgba(var(--c-warning),0.12)] px-4 py-3 text-sm text-[rgb(var(--c-text))]">
+      <WifiOff className="mt-0.5 h-4 w-4" aria-hidden="true" />
+      <div className="leading-relaxed">
+        <p className="font-semibold">Você está offline.</p>
+        <p className="text-[rgba(var(--c-text),0.80)]">
+          Você ainda pode preencher o formulário. Se o envio falhar, tente novamente quando reconectar.
+        </p>
+      </div>
     </div>
   )
 }
