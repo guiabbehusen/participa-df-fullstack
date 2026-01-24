@@ -1,47 +1,43 @@
 from __future__ import annotations
 
+import hashlib
 import re
-import secrets
+import uuid
 from datetime import datetime, timezone
-from pathlib import Path
+from typing import Optional
 
 from fastapi import UploadFile
 
 
-FILENAME_SAFE_CHARS = re.compile(r"[^a-zA-Z0-9._-]+")
-
-
 def utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
 
 def generate_protocol() -> str:
-    """Gera um protocolo curto, legível e único para demo.
+    # Protocol format: DF-YYYYMMDD-XXXXXXXX
+    now = datetime.now(timezone.utc)
+    ymd = now.strftime("%Y%m%d")
+    # 8 hex chars from random UUID (evita colisões em cenários concorrentes)
+    token = uuid.uuid4().hex[:8].upper()
+    return f"DF-{ymd}-{token}"
 
-    Formato: DF-YYYYMMDD-XXXXXX
-    """
-    date = datetime.now(timezone.utc).strftime("%Y%m%d")
-    rand = secrets.token_hex(3).upper()  # 6 hex chars
-    return f"DF-{date}-{rand}"
 
+_filename_re = re.compile(r"[^a-zA-Z0-9._-]+")
 
-def safe_filename(filename: str) -> str:
-    """Sanitiza nome de arquivo para armazenamento local."""
-    name = filename.strip().replace(" ", "_")
-    name = FILENAME_SAFE_CHARS.sub("-", name)
-    # evita nomes vazios
-    if not name or name in {".", ".."}:
-        name = f"file-{secrets.token_hex(4)}"
-    return name
+def safe_filename(name: str) -> str:
+    name = name.strip().replace("\\", "_").replace("/", "_")
+    name = _filename_re.sub("_", name)
+    if not name:
+        return "arquivo"
+    return name[:180]
 
 
 async def read_limited(upload: UploadFile, max_bytes: int) -> bytes:
-    """Lê um UploadFile com limite para evitar consumo excessivo de memória."""
-    data = await upload.read(max_bytes + 1)
+    data = await upload.read()
     if len(data) > max_bytes:
-        raise ValueError("Arquivo excede o limite permitido")
+        raise ValueError("File too large")
     return data
 
 
-def ensure_dir(path: Path) -> None:
-    path.mkdir(parents=True, exist_ok=True)
+def sha256_hex(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()

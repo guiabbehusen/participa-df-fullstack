@@ -1,1 +1,0 @@
-# Participa DF backend package
