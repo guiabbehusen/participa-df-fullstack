@@ -2,75 +2,141 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  /* Ensures native controls follow a dark color scheme */
-  color-scheme: dark;
+/*
+  Tipografia (Manual: Visby Regular / Extra Bold).
+  Não incluímos arquivos de fonte proprietária.
+  Se você tiver licença, coloque os .woff2 em /public/fonts e mantenha os nomes abaixo.
+*/
+@font-face {
+  font-family: 'Visby';
+  src: url('/fonts/Visby-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Visby';
+  src: url('/fonts/Visby-ExtraBold.woff2') format('woff2');
+  font-weight: 800;
+  font-style: normal;
+  font-display: swap;
 }
 
-html, body {
-  height: 100%;
+:root {
+  color-scheme: light;
+}
+
+html {
+  font-size: calc(16px * var(--font-scale));
+  background: rgb(var(--c-bg));
+  color: rgb(var(--c-text));
+  text-rendering: optimizeLegibility;
 }
 
 body {
-  margin: 0;
-  min-height: 100%;
-  color: rgb(var(--text));
-  background-color: rgb(var(--bg));
-  background-image:
-    radial-gradient(1200px 600px at 20% 10%, rgba(var(--primary2), 0.18), transparent 60%),
-    radial-gradient(900px 500px at 80% 0%, rgba(var(--primary), 0.18), transparent 55%),
-    linear-gradient(180deg, rgba(var(--bg), 1), rgba(var(--bg2), 1));
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  min-height: 100vh;
+  font-family: Visby, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, 'Apple Color Emoji', 'Segoe UI Emoji';
+  background:
+    radial-gradient(900px 500px at 12% 2%, rgba(var(--c-primary), 0.10), transparent 55%),
+    radial-gradient(700px 400px at 92% 18%, rgba(var(--c-success), 0.10), transparent 60%),
+    radial-gradient(650px 380px at 88% 92%, rgba(var(--c-warning), 0.12), transparent 60%),
+    rgb(var(--c-bg));
 }
 
-/* Focus ring: visible & consistent (WCAG-friendly) */
+/* Acessibilidade: foco bem visível em todo o app */
 :focus-visible {
-  outline: 2px solid rgba(var(--primary), 0.95);
+  outline: 3px solid rgba(var(--c-primary), 0.55);
   outline-offset: 3px;
 }
 
-/* Screen-reader only */
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
+::selection {
+  background: rgba(var(--c-primary), 0.20);
 }
 
-/* Glass surfaces (premium + readable) */
+/* Componentes base */
 .glass {
-  background: rgba(var(--surface), 0.12);
-  border: 1px solid rgba(var(--border), 0.16);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  box-shadow: var(--shadow-glow);
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-lg);
+  border: 1px solid rgba(var(--c-border), 0.70);
+  background: rgba(var(--c-surface), 0.92);
+  box-shadow: var(--shadow-elev-1);
+  backdrop-filter: saturate(140%) blur(10px);
 }
 
-/* For elements that need the glow without glass background */
-.shadow-glow {
-  box-shadow: var(--shadow-glow);
+/* Versão mais "sólida" (para telas com muito texto) */
+.surface {
+  border-radius: var(--radius-lg);
+  border: 1px solid rgba(var(--c-border), 0.90);
+  background: rgb(var(--c-surface));
+  box-shadow: var(--shadow-elev-1);
 }
 
-/* Subtle shimmer utility */
 .shimmer {
   background-image: linear-gradient(
-    110deg,
-    rgba(255,255,255,0.08) 0%,
-    rgba(255,255,255,0.18) 30%,
-    rgba(255,255,255,0.08) 60%
+    90deg,
+    rgba(var(--c-border), 0.20),
+    rgba(var(--c-border), 0.45),
+    rgba(var(--c-border), 0.20)
   );
   background-size: 200% 100%;
-  animation: shimmer 1.4s linear infinite;
 }
 
-@keyframes shimmer {
-  0% { background-position: 0% 0%; }
-  100% { background-position: -200% 0%; }
+/* Animações sutis (respeitam a preferência de reduzir movimento via Acessibilidade) */
+@keyframes floaty {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
+.animate-float {
+  animation: floaty 4.5s ease-in-out infinite;
+}
+
+@keyframes shimmerMove {
+  0% {
+    background-position: 0% 0%;
+  }
+  100% {
+    background-position: 200% 0%;
+  }
+}
+
+.animate-shimmer {
+  animation: shimmerMove 1.8s linear infinite;
+}
+
+/* Scrollbars discretas (não afeta contraste alto) */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(var(--c-border), 0.8) rgba(var(--c-surface), 0.3);
+}
+*::-webkit-scrollbar {
+  width: 10px;
+}
+*::-webkit-scrollbar-track {
+  background: rgba(var(--c-surface), 0.35);
+}
+*::-webkit-scrollbar-thumb {
+  background: rgba(var(--c-border), 0.85);
+  border-radius: 999px;
+  border: 2px solid rgba(var(--c-surface), 0.55);
+}
+
+/* Alto contraste: remove transparências e reforça bordas */
+html.a11y-contrast body {
+  background: rgb(var(--c-bg));
+}
+html.a11y-contrast .glass {
+  background: rgb(var(--c-surface));
+  backdrop-filter: none;
+  border: 2px solid rgb(var(--c-border));
+}
+
+/* Reduz movimento: remove animações customizadas */
+html.a11y-reduce-motion .animate-float,
+html.a11y-reduce-motion .animate-shimmer {
+  animation: none !important;
 }
