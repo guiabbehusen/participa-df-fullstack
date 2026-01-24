@@ -1,80 +1,128 @@
 from __future__ import annotations
 
+import uuid
 from typing import Optional
 
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import noload
 
 from .db_models import AttachmentDB, ManifestationDB
-from .models import Attachment, ManifestationRecord
+from .models import AttachmentOut, ManifestationRecord
 
 
 class Store:
-    """Persistência (DB) para manifestações.
-
-    Interface: create(session, record) e get(session, protocol).
-    """
-
-    async def create(self, session: AsyncSession, record: ManifestationRecord) -> None:
-        # A coluna created_at no DB tem default NOW().
-        # Mantemos record.created_at como ISO string para resposta imediata.
-        m = ManifestationDB(
-            protocol=record.protocol,
-            status=record.status.value if hasattr(record.status, "value") else str(record.status),
-            kind=record.kind.value if hasattr(record.kind, "value") else str(record.kind),
-            subject=record.subject,
-            description_text=record.description_text,
-            anonymous=bool(record.anonymous),
-            audio_transcript=record.audio_transcript,
-            image_alt=record.image_alt,
-            video_description=record.video_description,
-        )
-
-        for a in record.attachments:
-            m.attachments.append(
-                AttachmentDB(
-                    field=a.field,
-                    filename=a.filename,
-                    content_type=a.content_type,
-                    bytes=int(a.bytes),
-                )
-            )
+    async def create_manifestation(
+        self,
+        session: AsyncSession,
+        m: ManifestationDB,
+        attachments: list[AttachmentDB],
+    ) -> None:
+        for a in attachments:
+            m.attachments.append(a)
 
         session.add(m)
-        await session.commit()
+        try:
+            await session.commit()
+        except SQLAlchemyError:
+            # Evita deixar a sessão em estado inválido e melhora debuggabilidade
+            await session.rollback()
+            raise
 
-    async def get(self, session: AsyncSession, protocol: str) -> Optional[ManifestationRecord]:
-        stmt = select(ManifestationDB).where(ManifestationDB.protocol == protocol)
+    async def get_by_protocol(self, session: AsyncSession, protocol: str) -> Optional[ManifestationRecord]:
+        # Importante:
+        # - Evitamos carregar `attachments.data` (BYTEA) quando a tela só precisa de metadados.
+        # - Isso reduz uso de memória e evita erros/latência em bases com anexos grandes.
+        stmt = (
+            select(ManifestationDB)
+            .options(noload(ManifestationDB.attachments))
+            .where(ManifestationDB.protocol == protocol)
+        )
         res = await session.execute(stmt)
-        m = res.scalar_one_or_none()
-        if not m:
+        row = res.scalar_one_or_none()
+        if not row:
             return None
 
-        attachments = [
-            Attachment(
-                field=a.field,
-                filename=a.filename,
-                content_type=a.content_type,
-                bytes=a.bytes,
+        attachments_out: list[AttachmentOut] = []
+        try:
+            # Seleciona apenas metadados; não traz o blob (`data`).
+            stmt_a = (
+                select(
+                    AttachmentDB.id,
+                    AttachmentDB.field,
+                    AttachmentDB.filename,
+                    AttachmentDB.content_type,
+                    AttachmentDB.bytes,
+                    AttachmentDB.accessibility_text,
+                )
+                .where(AttachmentDB.manifestation_id == row.id)
+                .order_by(AttachmentDB.created_at.asc())
             )
-            for a in (m.attachments or [])
-        ]
+            res_a = await session.execute(stmt_a)
+            for (aid, field, filename, content_type, bytes_, a11y) in res_a.all():
+                attachments_out.append(
+                    AttachmentOut(
+                        id=str(aid),
+                        field=field,
+                        filename=filename,
+                        content_type=content_type,
+                        bytes=int(bytes_ or 0),
+                        accessibility_text=a11y,
+                        download_url=f"/api/manifestations/{row.protocol}/attachments/{aid}",
+                    )
+                )
+        except SQLAlchemyError:
+            # Se houver inconsistência de schema (ex.: tabela antiga sem anexos),
+            # devolvemos o protocolo sem anexos para não quebrar a UX.
+            attachments_out = []
 
-        created_at = m.created_at.isoformat() if getattr(m, "created_at", None) else ""
+        created_at = row.created_at.isoformat() if row.created_at else ""
 
         return ManifestationRecord(
-            protocol=m.protocol,
+            protocol=row.protocol,
             created_at=created_at,
-            status=m.status,
-            kind=m.kind,
-            subject=m.subject,
-            description_text=m.description_text,
-            anonymous=m.anonymous,
-            audio_transcript=m.audio_transcript,
-            image_alt=m.image_alt,
-            video_description=m.video_description,
-            attachments=attachments,
+            status=row.status,
+            kind=row.kind,
+            subject=row.subject,
+            subject_detail=row.subject_detail,
+            description_text=row.description_text,
+            anonymous=row.anonymous,
+            contact_name=row.contact_name,
+            contact_email=row.contact_email,
+            contact_phone=row.contact_phone,
+            attachments=attachments_out,
         )
+
+    async def get_attachment(
+        self,
+        session: AsyncSession,
+        protocol: str,
+        attachment_id: uuid.UUID,
+    ) -> Optional[AttachmentDB]:
+        stmt = (
+            select(AttachmentDB)
+            .join(ManifestationDB, AttachmentDB.manifestation_id == ManifestationDB.id)
+            .where(ManifestationDB.protocol == protocol)
+            .where(AttachmentDB.id == attachment_id)
+        )
+        res = await session.execute(stmt)
+        return res.scalar_one_or_none()
+
+    async def get_attachment_by_filename(
+        self,
+        session: AsyncSession,
+        protocol: str,
+        filename: str,
+    ) -> Optional[AttachmentDB]:
+        stmt = (
+            select(AttachmentDB)
+            .join(ManifestationDB, AttachmentDB.manifestation_id == ManifestationDB.id)
+            .where(ManifestationDB.protocol == protocol)
+            .where(AttachmentDB.filename == filename)
+        )
+        res = await session.execute(stmt)
+        return res.scalar_one_or_none()
 
 
 store = Store()

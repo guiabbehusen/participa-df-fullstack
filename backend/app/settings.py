@@ -1,45 +1,50 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
-
 from dotenv import load_dotenv
 
-# Load .env if present (dev-friendly, Windows-friendly)
 load_dotenv()
 
+def _env(name: str, default: str) -> str:
+    v = os.getenv(name)
+    return v if (v is not None and v != "") else default
 
 def get_env_list(name: str, default: str) -> list[str]:
-    value = os.getenv(name, default)
+    value = _env(name, default)
     return [x.strip() for x in value.split(",") if x.strip()]
 
-
-APP_NAME = os.getenv("APP_NAME", "Participa DF API")
-
-# Storage (uploads)
-UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", str(Path(__file__).resolve().parents[1] / "uploads")))
-MAX_FILE_MB = int(os.getenv("MAX_FILE_MB", "15"))
-MAX_FILE_BYTES = MAX_FILE_MB * 1024 * 1024
+APP_NAME = _env("APP_NAME", "Participa DF API")
 
 # CORS
-_DEFAULT_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173")
+_DEFAULT_ORIGINS = _env("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173")
 ALLOWED_ORIGINS = get_env_list("ALLOWED_ORIGINS", _DEFAULT_ORIGINS)
-CORS_ORIGINS = ALLOWED_ORIGINS
+
+# Files (stored in Postgres as bytea)
+MAX_FILE_MB = int(_env("MAX_FILE_MB", "15"))
+MAX_FILE_BYTES = MAX_FILE_MB * 1024 * 1024
 
 # Database
-# Recommended: PostgreSQL
-#   postgresql+asyncpg://user:pass@localhost:5432/dbname
-# Fallback: SQLite (works without external dependencies)
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./participa_df.db")
+DATABASE_URL = _env("DATABASE_URL", "postgresql+asyncpg://participa:participa@localhost:5432/participa_df")
+
+def database_url_sync() -> str:
+    """Alembic (migrations) prefers a sync driver.
+
+    Converts:
+      postgresql+asyncpg://... -> postgresql+psycopg://...
+    """
+    if DATABASE_URL.startswith("postgresql+asyncpg://"):
+        return DATABASE_URL.replace("postgresql+asyncpg://", "postgresql+psycopg://", 1)
+    if DATABASE_URL.startswith("postgresql+asyncpg:"):
+        return DATABASE_URL.replace("+asyncpg", "+psycopg", 1)
+    # Fallback: try removing async driver token
+    return DATABASE_URL.replace("+asyncpg", "")
+
+# SLA / prazo
+INITIAL_RESPONSE_SLA_DAYS = int(_env("INITIAL_RESPONSE_SLA_DAYS", "10"))
 
 # Ollama (LLM local)
-# - Exige o Ollama rodando na máquina (default: http://localhost:11434)
-# - O modelo deve estar previamente baixado via `ollama pull <modelo>`
-OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.1:8b-instruct")
-
-# Ajustes de geração (valores conservadores para respostas consistentes)
-OLLAMA_TEMPERATURE = float(os.getenv("OLLAMA_TEMPERATURE", "0.2"))
-OLLAMA_TOP_P = float(os.getenv("OLLAMA_TOP_P", "0.9"))
-OLLAMA_NUM_CTX = int(os.getenv("OLLAMA_NUM_CTX", "4096"))
-OLLAMA_TIMEOUT_S = float(os.getenv("OLLAMA_TIMEOUT_S", "90"))
+OLLAMA_BASE_URL = _env("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
+OLLAMA_MODEL = _env("OLLAMA_MODEL", "llama3.1:8b-instruct")
+OLLAMA_TEMPERATURE = float(_env("OLLAMA_TEMPERATURE", "0.2"))
+OLLAMA_TOP_P = float(_env("OLLAMA_TOP_P", "0.9"))
+OLLAMA_NUM_CTX = int(_env("OLLAMA_NUM_CTX", "4096"))

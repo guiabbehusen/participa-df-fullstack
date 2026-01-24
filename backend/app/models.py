@@ -3,7 +3,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, EmailStr, Field
 
 
 class ManifestationKind(str, Enum):
@@ -20,33 +20,39 @@ class ManifestationStatus(str, Enum):
     respondido = "Respondido"
 
 
-class Attachment(BaseModel):
-    field: str = Field(..., description="Nome do campo do formulário (ex.: image_file)")
-    filename: str = Field(..., description="Nome do arquivo armazenado")
-    content_type: str = Field(..., description="MIME type")
-    bytes: int = Field(..., ge=0, description="Tamanho em bytes")
+class AttachmentOut(BaseModel):
+    id: str
+    field: str
+    filename: str
+    content_type: str
+    bytes: int
+    accessibility_text: Optional[str] = None
+    download_url: Optional[str] = None
 
 
 class ManifestationRecord(BaseModel):
     protocol: str
     created_at: str
-    status: ManifestationStatus
+    status: str
 
-    kind: ManifestationKind
+    kind: str
     subject: str
+    subject_detail: Optional[str] = None
+
     description_text: Optional[str] = None
     anonymous: bool = False
 
-    audio_transcript: Optional[str] = None
-    image_alt: Optional[str] = None
-    video_description: Optional[str] = None
+    contact_name: Optional[str] = None
+    contact_email: Optional[EmailStr] = None
+    contact_phone: Optional[str] = None
 
-    attachments: List[Attachment] = Field(default_factory=list)
+    attachments: List[AttachmentOut] = Field(default_factory=list)
 
 
 class CreateManifestationResponse(BaseModel):
     protocol: str
     created_at: str
+    initial_response_sla_days: int = Field(..., description="Prazo inicial estimado de resposta (dias).")
 
 
 class ErrorResponse(BaseModel):
