@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
+  Accessibility,
   Eye,
   EyeOff,
   Minus,
@@ -8,6 +9,7 @@ import {
   Sparkles,
   Volume2,
   VolumeX,
+  X,
 } from 'lucide-react'
 
 import { useTts } from '@/hooks/useTts'
@@ -19,6 +21,7 @@ type A11yPrefs = {
 }
 
 const STORAGE_KEY = 'participa_df:a11y:v1'
+const DOCK_KEY = 'participa_df:a11y:dock_open:v1'
 
 function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n))
@@ -47,25 +50,73 @@ function savePrefs(prefs: A11yPrefs) {
   }
 }
 
+function loadDockOpen(): boolean {
+  try {
+    const raw = localStorage.getItem(DOCK_KEY)
+    if (raw === null) return true
+    return raw === '1'
+  } catch {
+    return true
+  }
+}
+
+function saveDockOpen(open: boolean) {
+  try {
+    localStorage.setItem(DOCK_KEY, open ? '1' : '0')
+  } catch {
+    // ignore
+  }
+}
+
+function normalizeWhitespace(s: string) {
+  return (s || '').replace(/\s+/g, ' ').trim()
+}
+
 function getReadableTextFromMain(): string {
   const main = document.getElementById('main')
   if (!main) return ''
 
-  const h1 = main.querySelector('h1')?.textContent?.trim() || ''
-  const ps = Array.from(main.querySelectorAll('p'))
-    .map((p) => (p.textContent || '').trim())
-    .filter(Boolean)
-    .slice(0, 3)
+  // Seleciona elementos que normalmente carregam o conteúdo “real” da tela.
+  // (Evita ler botões repetidos e barras auxiliares desnecessárias.)
+  const selectors = 'h1,h2,h3,p,li,label,legend,dt,dd'
+  const nodes = Array.from(main.querySelectorAll(selectors))
 
-  const blocks = [h1, ...ps].filter(Boolean)
-  const text = blocks.join('. ')
+  const parts: string[] = []
+  const seen = new Set<string>()
 
-  // Evita fala muito longa
-  return text.length > 700 ? text.slice(0, 700).trim() + '…' : text
+  // Inclui o título da página, se existir.
+  const pageTitle = normalizeWhitespace(document.title || '')
+  if (pageTitle) {
+    parts.push(pageTitle)
+    seen.add(pageTitle)
+  }
+
+  let total = parts.join('. ').length
+
+  for (const el of nodes) {
+    // ignora conteúdo escondido
+    if ((el as HTMLElement).getAttribute('aria-hidden') === 'true') continue
+    const txt = normalizeWhitespace(el.textContent || '')
+    if (!txt) continue
+    if (txt.length < 2) continue
+    if (seen.has(txt)) continue
+    seen.add(txt)
+
+    parts.push(txt)
+    total += txt.length + 2
+
+    // Limite: evita leitura muito longa (mas ainda lê “a tela toda” na prática)
+    if (total > 2800) break
+  }
+
+  const joined = parts.join('. ')
+  return joined.length > 3000 ? joined.slice(0, 3000).trim() + '…' : joined
 }
 
 export function AccessibilityDock() {
   const [prefs, setPrefs] = useState<A11yPrefs>(() => loadPrefs())
+  const [dockOpen, setDockOpen] = useState<boolean>(() => loadDockOpen())
+
   const tts = useTts('pt-BR')
   const [ttsHint, setTtsHint] = useState<string | null>(null)
   const canSpeak = useMemo(() => tts.supported, [tts.supported])
@@ -81,6 +132,10 @@ export function AccessibilityDock() {
     applyPrefs(prefs)
     savePrefs(prefs)
   }, [prefs, applyPrefs])
+
+  useEffect(() => {
+    saveDockOpen(dockOpen)
+  }, [dockOpen])
 
   useEffect(() => {
     // Encerra fala ao desmontar
@@ -137,9 +192,7 @@ export function AccessibilityDock() {
       watchdog = window.setTimeout(() => {
         // Se o `onstart` não disparou, a engine pode estar bloqueada/sem vozes.
         if (!tts.speaking) {
-          setTtsHint(
-            'Não consegui iniciar o áudio. Dica: verifique se o som do navegador está ativo e clique novamente.',
-          )
+          setTtsHint('Não consegui iniciar o áudio. Verifique se o som do navegador/dispositivo está ativo e clique novamente.')
         }
       }, 900)
 
@@ -158,15 +211,44 @@ export function AccessibilityDock() {
     }
   }, [canSpeak, tts])
 
+  // Quando recolhido, mantém um botão flutuante (sempre disponível)
+  if (!dockOpen) {
+    return (
+      <aside className="fixed bottom-4 left-4 z-[70]" aria-label="Ferramentas de acessibilidade">
+        <button
+          type="button"
+          onClick={() => setDockOpen(true)}
+          className="glass inline-flex h-12 w-12 items-center justify-center rounded-2xl border border-[rgba(var(--c-border),0.80)] bg-[rgba(var(--c-surface),0.88)] shadow-[var(--shadow-elev-2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(var(--c-primary),0.40)]"
+          aria-label="Abrir ferramentas de acessibilidade"
+          title="Acessibilidade"
+        >
+          <Accessibility className="h-5 w-5 text-[rgb(var(--c-primary))]" aria-hidden="true" />
+        </button>
+      </aside>
+    )
+  }
+
   return (
     <aside
-      className="fixed bottom-4 left-4 z-[70] w-[min(18rem,calc(100vw-2rem))]"
+      className="fixed bottom-4 left-4 z-[70] w-[min(19rem,calc(100vw-2rem))]"
       aria-label="Ferramentas de acessibilidade"
     >
       <div className="glass p-2">
         <div className="flex items-center justify-between gap-2 px-2 pb-2">
-          <p className="text-xs font-extrabold tracking-wide text-[rgb(var(--c-text))]">Acessibilidade</p>
-          <p className="text-[10px] font-semibold text-[rgba(var(--c-text),0.70)]">WCAG 2.1 AA</p>
+          <div className="min-w-0">
+            <p className="text-xs font-extrabold tracking-wide text-[rgb(var(--c-text))]">Acessibilidade</p>
+            <p className="text-[10px] font-semibold text-[rgba(var(--c-text),0.70)]">WCAG 2.1 AA</p>
+          </div>
+
+          <button
+            type="button"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[rgba(var(--c-border),0.75)] bg-[rgba(var(--c-surface),0.90)] text-[rgba(var(--c-text),0.85)] hover:bg-[rgba(var(--c-border),0.22)]"
+            onClick={() => setDockOpen(false)}
+            aria-label="Fechar ferramentas de acessibilidade"
+            title="Fechar"
+          >
+            <X className="h-4 w-4" aria-hidden="true" />
+          </button>
         </div>
 
         <div className="grid grid-cols-2 gap-2">
@@ -196,11 +278,7 @@ export function AccessibilityDock() {
             className="col-span-2 flex min-h-11 items-center justify-center gap-2 rounded-xl border border-[rgba(var(--c-border),0.75)] bg-[rgba(var(--c-surface),0.90)] px-3 py-3 text-sm font-semibold text-[rgb(var(--c-text))] hover:bg-[rgba(var(--c-border),0.22)]"
             aria-label={prefs.highContrast ? 'Desativar alto contraste' : 'Ativar alto contraste'}
           >
-            {prefs.highContrast ? (
-              <EyeOff className="h-4 w-4" aria-hidden="true" />
-            ) : (
-              <Eye className="h-4 w-4" aria-hidden="true" />
-            )}
+            {prefs.highContrast ? <EyeOff className="h-4 w-4" aria-hidden="true" /> : <Eye className="h-4 w-4" aria-hidden="true" />}
             <span>{prefs.highContrast ? 'Alto contraste: ligado' : 'Alto contraste: desligado'}</span>
           </button>
 
@@ -221,11 +299,7 @@ export function AccessibilityDock() {
             disabled={!canSpeak}
             aria-label={tts.speaking ? 'Parar leitura em voz alta' : 'Ler esta tela em voz alta'}
           >
-            {tts.speaking ? (
-              <VolumeX className="h-4 w-4" aria-hidden="true" />
-            ) : (
-              <Volume2 className="h-4 w-4" aria-hidden="true" />
-            )}
+            {tts.speaking ? <VolumeX className="h-4 w-4" aria-hidden="true" /> : <Volume2 className="h-4 w-4" aria-hidden="true" />}
             <span>{tts.speaking ? 'Parar leitura' : 'Ler esta tela'}</span>
           </button>
 
