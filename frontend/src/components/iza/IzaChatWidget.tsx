@@ -163,16 +163,37 @@ function draftSignature(d: Partial<ManifestationCreatePayload>) {
 }
 
 function buildDraftUpdateMessage(d: Partial<ManifestationCreatePayload>) {
-  const parts: string[] = []
+  const items: string[] = []
 
-  if ((d as any).image_file) parts.push((d as any).image_alt?.trim() ? 'foto com descrição' : 'foto')
-  if ((d as any).audio_file) parts.push((d as any).audio_transcript?.trim() ? 'áudio com transcrição' : 'áudio')
-  if ((d as any).video_file) parts.push((d as any).video_description?.trim() ? 'vídeo com descrição' : 'vídeo')
+  const clip = (s: string, max: number) => {
+    const t = (s || '').trim()
+    if (!t) return ''
+    return t.length > max ? `${t.slice(0, max).trim()}…` : t
+  }
 
-  if (!parts.length) return 'Atualizei o rascunho do formulário.'
+  if ((d as any).image_file) {
+    const alt = clip(String((d as any).image_alt || ''), 420)
+    items.push(alt ? `Foto anexada. Descrição da foto: ${alt}` : 'Foto anexada (falta a descrição da foto).')
+  }
 
-  // Mensagem curta para disparar a resposta da IZA sem o usuário ter que digitar.
-  return `Pronto. Atualizei ${parts.join(', ')} no rascunho. O que falta agora?`
+  if ((d as any).audio_file) {
+    const tr = clip(String((d as any).audio_transcript || ''), 900)
+    items.push(tr ? `Áudio anexado. Transcrição do áudio: ${tr}` : 'Áudio anexado (falta a transcrição do áudio).')
+  }
+
+  if ((d as any).video_file) {
+    const vd = clip(String((d as any).video_description || ''), 420)
+    items.push(vd ? `Vídeo anexado. Descrição do vídeo: ${vd}` : 'Vídeo anexado (falta a descrição do vídeo).')
+  }
+
+  if (!items.length) return 'Atualizei o rascunho do formulário.'
+
+  return [
+    'Atualizei os anexos no rascunho:',
+    ...items.map((i) => `- ${i}`),
+    '',
+    'O que falta agora para concluir?',
+  ].join('\n')
 }
 
 export function IzaChatWidget() {
