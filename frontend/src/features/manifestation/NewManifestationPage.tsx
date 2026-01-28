@@ -12,8 +12,38 @@ import { Input } from '@/components/ui/Input'
 import { Textarea } from '@/components/ui/Textarea'
 import { Badge } from '@/components/ui/Badge'
 import { ErrorSummary } from '@/components/a11y/ErrorSummary'
+import { RegistrationGuidelines } from '@/components/guides/RegistrationGuidelines'
 import { createManifestation } from '@/services/api/manifestations'
 import { clearDraft, loadDraft, saveDraft } from '@/services/storage/draft'
+
+const MAX_ATTACHMENT_MB = 25
+const MAX_ATTACHMENT_BYTES = MAX_ATTACHMENT_MB * 1024 * 1024
+
+function detectSensitiveInNarrative(text: string) {
+  const t = (text || '').trim()
+  if (!t) return [] as string[]
+
+  const hits: string[] = []
+
+  // CPF (com ou sem pontuação)
+  if (/\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b/.test(t)) hits.push('CPF')
+
+  // e-mail
+  if (/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(t)) hits.push('E-mail')
+
+  // Datas (pode indicar data de nascimento)
+  if (/\b\d{2}[/-]\d{2}[/-]\d{4}\b/.test(t)) hits.push('Data')
+
+  // Telefone (padrões comuns BR)
+  if (/\b(?:\+?55\s?)?(?:\(?\d{2}\)?\s?)?(?:9\s?)?\d{4}[-\s]?\d{4}\b/.test(t)) hits.push('Telefone')
+
+  return Array.from(new Set(hits))
+}
+
+function looksFederalTopic(text: string) {
+  const t = (text || '').toLowerCase()
+  return /(\binss\b|conecta\s*sus|\bgov\.br\b|governo\s*federal|fala\s*br)/.test(t)
+}
 
 const KINDS: { value: ManifestationKind; label: string }[] = [
   { value: 'reclamacao', label: 'Reclamação' },
@@ -61,6 +91,29 @@ const schema = z
     const imageFile = (data.image_file as FileList | undefined)?.[0]
     const audioFile = (data.audio_file as FileList | undefined)?.[0]
     const videoFile = (data.video_file as FileList | undefined)?.[0]
+
+    // Limite de tamanho (orientação do canal): 25MB
+    if (imageFile && imageFile.size > MAX_ATTACHMENT_BYTES) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['image_file'],
+        message: `Imagem acima do limite (${MAX_ATTACHMENT_MB}MB).` ,
+      })
+    }
+    if (audioFile && audioFile.size > MAX_ATTACHMENT_BYTES) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['audio_file'],
+        message: `Áudio acima do limite (${MAX_ATTACHMENT_MB}MB).` ,
+      })
+    }
+    if (videoFile && videoFile.size > MAX_ATTACHMENT_BYTES) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['video_file'],
+        message: `Vídeo acima do limite (${MAX_ATTACHMENT_MB}MB).` ,
+      })
+    }
 
     const hasAnyFile = !!imageFile || !!audioFile || !!videoFile
     const hasText = !!(data.description_text && data.description_text.trim().length > 0)
@@ -133,6 +186,18 @@ const schema = z
         }
       }
     }
+
+    // Para outros tipos, se o usuário preencher e-mail, valide formato.
+    if (!needsIdentification(data.kind) && data.contact_email && data.contact_email.trim().length > 0) {
+      const emailOk = z.string().email().safeParse(data.contact_email).success
+      if (!emailOk) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['contact_email'],
+          message: 'Informe um e-mail válido para acompanhamento (ou deixe em branco).',
+        })
+      }
+    }
   })
 
 type FormValues = z.infer<typeof schema>
@@ -164,6 +229,24 @@ export function NewManifestationPage() {
 
   const kind = form.watch('kind')
   const anonymous = form.watch('anonymous')
+  const descriptionTextLive = form.watch('description_text') || ''
+  const subjectLive = form.watch('subject') || ''
+
+  const sensitiveHits = useMemo(
+    () => detectSensitiveInNarrative(descriptionTextLive),
+    [descriptionTextLive],
+  )
+
+  const federalTopicDetected = useMemo(() => {
+    const hay = `${subjectLive} ${descriptionTextLive}`.toLowerCase()
+    return (
+      hay.includes('inss') ||
+      hay.includes('conecta sus') ||
+      hay.includes('gov.br') ||
+      hay.includes('fala br') ||
+      hay.includes('governo federal')
+    )
+  }, [subjectLive, descriptionTextLive])
 
   useEffect(() => {
     const sub = form.watch((values) => {
@@ -263,6 +346,9 @@ export function NewManifestationPage() {
         </div>
       </header>
 
+      {/* Orientações do canal (visível e acessível) */}
+      <RegistrationGuidelines />
+
       {/* Erros (WCAG) */}
       <ErrorSummary errors={errors} />
 
@@ -321,6 +407,9 @@ export function NewManifestationPage() {
               />
               <p className="mt-2 text-xs text-[rgba(var(--c-text),0.70)]">
                 Exemplos: {SUBJECT_EXAMPLES.join(' · ')}
+              </p>
+              <p className="mt-1 text-xs text-[rgba(var(--c-text),0.72)]">
+                Dica: cada registro deve conter apenas <span className="font-semibold">1 assunto</span>.
               </p>
               {errors.subject && <p className="mt-2 text-sm text-red-700">{errors.subject.message}</p>}
             </div>
@@ -414,12 +503,117 @@ export function NewManifestationPage() {
                   Enviar como anônimo
                 </span>
                 <span className="block text-sm text-[rgba(var(--c-text),0.78)]">
-                  Não solicitaremos dados pessoais. Ainda assim, descreva bem o local e o contexto.
+                  Você pode registrar sem se identificar. Nesse caso, não poderá acompanhar nem receber a resposta.
+                  Ainda assim, descreva bem o local e o contexto.
                 </span>
               </span>
             </label>
             {errors.anonymous && <p className="mt-2 text-sm text-red-700">{errors.anonymous.message}</p>}
           </div>
+
+          {/* Acompanhamento opcional (para reclamação/denúncia) */}
+          {!needsIdentification(kind) && !anonymous && (
+            <div className="mt-5 rounded-xl border border-[rgba(var(--c-primary),0.20)] bg-[rgba(var(--c-primary),0.06)] p-4">
+              <details className="group">
+                <summary className="flex cursor-pointer list-none items-start justify-between gap-3">
+                  <span>
+                    <span className="block text-sm font-semibold text-[rgb(var(--c-text))]">
+                      Quero acompanhar e receber resposta (opcional)
+                    </span>
+                    <span className="mt-1 block text-sm text-[rgba(var(--c-text),0.78)]">
+                      Para acompanhamento, informe seu e-mail. Se preferir não informar, tudo bem: você ainda receberá o protocolo.
+                    </span>
+                  </span>
+                  <span
+                    aria-hidden="true"
+                    className="mt-1 h-6 w-6 shrink-0 rounded-full bg-white/70 text-[rgba(var(--c-text),0.70)] ring-1 ring-[rgba(var(--c-border),0.60)] transition group-open:rotate-180"
+                    style={{ display: 'grid', placeItems: 'center' }}
+                  >
+                    ▾
+                  </span>
+                </summary>
+
+                <div className="mt-4 grid gap-4 md:grid-cols-2">
+                  <div>
+                    <label className="text-sm font-semibold text-[rgb(var(--c-text))]" htmlFor="contact_name">
+                      Seu nome
+                    </label>
+                    <Input id="contact_name" {...form.register('contact_name')} className="mt-2" />
+                    {errors.contact_name && (
+                      <p className="mt-2 text-sm text-red-700">{errors.contact_name.message}</p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="text-sm font-semibold text-[rgb(var(--c-text))]" htmlFor="contact_email">
+                      E-mail
+                    </label>
+                    <Input
+                      id="contact_email"
+                      type="email"
+                      inputMode="email"
+                      placeholder="seuemail@exemplo.com"
+                      {...form.register('contact_email')}
+                      className="mt-2"
+                    />
+                    {errors.contact_email && (
+                      <p className="mt-2 text-sm text-red-700">{errors.contact_email.message}</p>
+                    )}
+                    <p className="mt-2 text-xs text-[rgba(var(--c-text),0.72)]">
+                      O acompanhamento será associado ao e-mail informado.
+                    </p>
+                  </div>
+
+                  <div className="md:col-span-2">
+                    <label className="text-sm font-semibold text-[rgb(var(--c-text))]" htmlFor="contact_phone">
+                      Telefone (opcional)
+                    </label>
+                    <Input
+                      id="contact_phone"
+                      inputMode="tel"
+                      placeholder="(61) 9XXXX-XXXX"
+                      {...form.register('contact_phone')}
+                      className="mt-2"
+                    />
+                  </div>
+                </div>
+              </details>
+            </div>
+          )}
+
+          {/* Se estiver anônimo, explique a consequência (sem assustar) */}
+          {!needsIdentification(kind) && anonymous && (
+            <div className="mt-4 rounded-xl border border-[rgba(var(--c-warning),0.25)] bg-[rgba(var(--c-warning),0.10)] p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="flex items-start gap-2">
+                  <Info className="mt-0.5 h-4 w-4" aria-hidden="true" />
+                  <p className="text-sm leading-relaxed text-[rgba(var(--c-text),0.85)]">
+                    Modo anônimo ativo: você não poderá acompanhar nem receber resposta por e-mail.
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="px-4"
+                  onClick={() => form.setValue('anonymous', false, { shouldValidate: true, shouldDirty: true })}
+                >
+                  Quero acompanhar
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* Proteção ao denunciante (reforço de confiança) */}
+          {kind === 'denuncia' && (
+            <div className="mt-4 rounded-xl border border-[rgba(var(--c-success),0.25)] bg-[rgba(var(--c-success),0.08)] p-4">
+              <div className="flex items-start gap-2">
+                <CheckCircle2 className="mt-0.5 h-4 w-4" aria-hidden="true" />
+                <p className="text-sm leading-relaxed text-[rgba(var(--c-text),0.85)]">
+                  <span className="font-semibold">Proteção ao denunciante:</span> denúncias são tratadas com sigilo. Evite expor dados pessoais no relato.
+                </p>
+              </div>
+            </div>
+          )}
         </Card>
 
         {/* 2) Relato e anexos */}
@@ -447,6 +641,46 @@ export function NewManifestationPage() {
             />
             {errors.description_text && (
               <p className="mt-2 text-sm text-red-700">{errors.description_text.message as any}</p>
+            )}
+
+            {/* Privacidade (orientação): evita dados pessoais no relato */}
+            {sensitiveHits.length > 0 && (
+              <div className="mt-4 rounded-xl border border-[rgba(var(--c-warning),0.30)] bg-[rgba(var(--c-warning),0.12)] p-4">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="mt-0.5 h-4 w-4" aria-hidden="true" />
+                  <p className="text-sm leading-relaxed text-[rgba(var(--c-text),0.85)]">
+                    Para proteger seus dados, evite incluir informações pessoais no texto do registro (ex.: CPF, e-mail, data de nascimento). Use os campos de identificação quando necessário.
+                  </p>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {sensitiveHits.map((h) => (
+                    <Badge key={h} variant="warning">
+                      {h}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Direcionamento: assunto federal -> Fala BR */}
+            {federalTopicDetected && (
+              <div className="mt-4 rounded-xl border border-[rgba(var(--c-primary),0.25)] bg-[rgba(var(--c-primary),0.08)] p-4">
+                <div className="flex items-start gap-2">
+                  <Info className="mt-0.5 h-4 w-4" aria-hidden="true" />
+                  <p className="text-sm leading-relaxed text-[rgba(var(--c-text),0.85)]">
+                    Parece um assunto do Governo Federal (ex.: INSS, Conecta SUS, gov.br). Para esses temas, use o sistema{' '}
+                    <a
+                      className="font-semibold text-[rgb(var(--c-primary))] underline underline-offset-2"
+                      href="https://falabr.cgu.gov.br"
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Fala BR
+                    </a>
+                    .
+                  </p>
+                </div>
+              </div>
             )}
           </div>
 
