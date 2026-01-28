@@ -163,37 +163,16 @@ function draftSignature(d: Partial<ManifestationCreatePayload>) {
 }
 
 function buildDraftUpdateMessage(d: Partial<ManifestationCreatePayload>) {
-  const items: string[] = []
+  const parts: string[] = []
 
-  const clip = (s: string, max: number) => {
-    const t = (s || '').trim()
-    if (!t) return ''
-    return t.length > max ? `${t.slice(0, max).trim()}…` : t
-  }
+  if ((d as any).image_file) parts.push((d as any).image_alt?.trim() ? 'foto com descrição' : 'foto')
+  if ((d as any).audio_file) parts.push((d as any).audio_transcript?.trim() ? 'áudio com transcrição' : 'áudio')
+  if ((d as any).video_file) parts.push((d as any).video_description?.trim() ? 'vídeo com descrição' : 'vídeo')
 
-  if ((d as any).image_file) {
-    const alt = clip(String((d as any).image_alt || ''), 420)
-    items.push(alt ? `Foto anexada. Descrição da foto: ${alt}` : 'Foto anexada (falta a descrição da foto).')
-  }
+  if (!parts.length) return 'Atualizei o rascunho do formulário.'
 
-  if ((d as any).audio_file) {
-    const tr = clip(String((d as any).audio_transcript || ''), 900)
-    items.push(tr ? `Áudio anexado. Transcrição do áudio: ${tr}` : 'Áudio anexado (falta a transcrição do áudio).')
-  }
-
-  if ((d as any).video_file) {
-    const vd = clip(String((d as any).video_description || ''), 420)
-    items.push(vd ? `Vídeo anexado. Descrição do vídeo: ${vd}` : 'Vídeo anexado (falta a descrição do vídeo).')
-  }
-
-  if (!items.length) return 'Atualizei o rascunho do formulário.'
-
-  return [
-    'Atualizei os anexos no rascunho:',
-    ...items.map((i) => `- ${i}`),
-    '',
-    'O que falta agora para concluir?',
-  ].join('\n')
+  // Mensagem curta para disparar a resposta da IZA sem o usuário ter que digitar.
+  return `Pronto. Atualizei ${parts.join(', ')} no rascunho. O que falta agora?`
 }
 
 export function IzaChatWidget() {
@@ -202,6 +181,16 @@ export function IzaChatWidget() {
   const [open, setOpen] = useState(false)
   const [input, setInput] = useState('')
   const [helpOpen, setHelpOpen] = useState(false)
+
+
+  // Dica curta no botão do chat (descoberta)
+  const [chatHintOpen, setChatHintOpen] = useState(true)
+
+  useEffect(() => {
+    if (!chatHintOpen) return
+    const t = window.setTimeout(() => setChatHintOpen(false), 60000)
+    return () => window.clearTimeout(t)
+  }, [chatHintOpen])
 
   // TTS (acessibilidade)
   const tts = useTts('pt-BR')
@@ -933,12 +922,31 @@ export function IzaChatWidget() {
         whileHover={{ scale: 1.04 }}
         whileTap={{ scale: 0.98 }}
         onClick={() => {
+          setChatHintOpen(false)
           setOpen(true)
           setHelpOpen(false)
         }}
       >
         <span className="absolute -inset-2 -z-10 rounded-full bg-[rgba(var(--c-primary),0.18)] blur-md" aria-hidden="true" />
         <MessageCircle className="h-7 w-7" aria-hidden="true" />
+        <AnimatePresence>
+          {!open && chatHintOpen && (
+            <motion.span
+              initial={{ opacity: 0, y: 8, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 8, scale: 0.98 }}
+              className="pointer-events-none absolute bottom-[calc(100%+10px)] right-0 whitespace-nowrap rounded-full bg-white/95 px-3 py-1.5 text-sm font-medium text-slate-900 shadow-[var(--shadow-elev-3)] ring-1 ring-black/10 backdrop-blur-md"
+            >
+              <span className="sm:hidden">Chat da IZA</span>
+              <span className="hidden sm:inline">Oi! Posso te ajudar?</span>
+
+              <span
+                aria-hidden="true"
+                className="absolute right-7 top-full h-0 w-0 border-x-[7px] border-x-transparent border-t-[7px] border-t-white/95 drop-shadow-[0_1px_0_rgba(0,0,0,0.10)]"
+              />
+            </motion.span>
+          )}
+        </AnimatePresence>
         <span
           className="absolute -top-1 -right-1 inline-flex h-4 w-4 items-center justify-center rounded-full bg-white text-[rgb(var(--c-primary))] ring-1 ring-[rgba(var(--c-primary),0.25)]"
           aria-hidden="true"
