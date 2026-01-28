@@ -19,7 +19,14 @@ from .iza_ollama import router as iza_router
 from .models import CreateManifestationResponse, ErrorResponse, ManifestationRecord
 from .settings import ALLOWED_ORIGINS, APP_NAME, INITIAL_RESPONSE_SLA_DAYS, MAX_FILE_BYTES, MAX_FILE_MB
 from .storage import store
-from .utils import generate_protocol, read_limited, safe_filename, sha256_hex, utc_now_iso
+from .utils import (
+    generate_protocol,
+    read_limited,
+    redact_personal_data,
+    safe_filename,
+    sha256_hex,
+    utc_now_iso,
+)
 
 
 app = FastAPI(title=APP_NAME, version="1.0.0")
@@ -129,6 +136,10 @@ async def create_manifestation(
     subject = (subject or "").strip()
     subject_detail = (subject_detail or "").strip()
     description_text = (description_text or "").strip() if description_text else None
+
+    # Privacidade: remove padrões comuns de dados pessoais do relato (CPF, e-mail, telefone).
+    if description_text:
+        description_text, _ = redact_personal_data(description_text)
 
     # Basic validation
     if kind not in {"reclamacao", "denuncia", "sugestao", "elogio", "solicitacao"}:
