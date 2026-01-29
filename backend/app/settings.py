@@ -20,7 +20,7 @@ _DEFAULT_ORIGINS = _env("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:
 ALLOWED_ORIGINS = get_env_list("ALLOWED_ORIGINS", _DEFAULT_ORIGINS)
 
 # Files (stored in Postgres as bytea)
-MAX_FILE_MB = int(_env("MAX_FILE_MB", "15"))
+MAX_FILE_MB = int(_env("MAX_FILE_MB", "25"))
 MAX_FILE_BYTES = MAX_FILE_MB * 1024 * 1024
 
 # Database
