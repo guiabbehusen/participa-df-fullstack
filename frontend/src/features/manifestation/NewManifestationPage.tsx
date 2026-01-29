@@ -3,7 +3,7 @@ import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useNavigate } from 'react-router-dom'
-import { AlertTriangle, CheckCircle2, Info, Paperclip, Sparkles } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Info, Sparkles } from 'lucide-react'
 
 import type { ManifestationCreatePayload, ManifestationKind } from '@/types/manifestation'
 import { Button } from '@/components/ui/Button'
@@ -13,6 +13,7 @@ import { Textarea } from '@/components/ui/Textarea'
 import { Badge } from '@/components/ui/Badge'
 import { ErrorSummary } from '@/components/a11y/ErrorSummary'
 import { FormStepper, type FormStep } from '@/components/a11y/FormStepper'
+import { MediaAttachmentField } from '@/components/attachments/MediaAttachmentField'
 import { RegistrationGuidelines } from '@/components/guides/RegistrationGuidelines'
 import { createManifestation } from '@/services/api/manifestations'
 import { izaChat } from '@/services/api/iza'
@@ -20,6 +21,16 @@ import { clearDraft, loadDraft, saveDraft } from '@/services/storage/draft'
 
 const MAX_ATTACHMENT_MB = 25
 const MAX_ATTACHMENT_BYTES = MAX_ATTACHMENT_MB * 1024 * 1024
+
+function firstFile(v: unknown): File | undefined {
+  if (!v) return undefined
+  if (v instanceof File) return v
+  const anyV: any = v as any
+  if (typeof FileList !== 'undefined' && v instanceof FileList) return v.item(0) || undefined
+  if (Array.isArray(anyV) && anyV[0] instanceof File) return anyV[0]
+  if (anyV?.[0] instanceof File) return anyV[0]
+  return undefined
+}
 
 function detectSensitiveInNarrative(text: string) {
   const t = (text || '').trim()
@@ -90,9 +101,9 @@ const schema = z
     video_description: z.string().optional(),
   })
   .superRefine((data, ctx) => {
-    const imageFile = (data.image_file as FileList | undefined)?.[0]
-    const audioFile = (data.audio_file as FileList | undefined)?.[0]
-    const videoFile = (data.video_file as FileList | undefined)?.[0]
+    const imageFile = firstFile(data.image_file)
+    const audioFile = firstFile(data.audio_file)
+    const videoFile = firstFile(data.video_file)
 
     // Limite de tamanho (orientação do canal): 25MB
     if (imageFile && imageFile.size > MAX_ATTACHMENT_BYTES) {
@@ -294,9 +305,9 @@ export function NewManifestationPage() {
   const contactNameLive = form.watch('contact_name') || ''
   const contactEmailLive = form.watch('contact_email') || ''
 
-  const imageFile = (form.watch('image_file') as FileList | undefined)?.[0]
-  const audioFile = (form.watch('audio_file') as FileList | undefined)?.[0]
-  const videoFile = (form.watch('video_file') as FileList | undefined)?.[0]
+  const imageFile = firstFile(form.watch('image_file'))
+  const audioFile = firstFile(form.watch('audio_file'))
+  const videoFile = firstFile(form.watch('video_file'))
   const hasAnyAttachment = !!imageFile || !!audioFile || !!videoFile
 
   const hasAnyRelato = useMemo(() => {
@@ -455,9 +466,9 @@ export function NewManifestationPage() {
         audio_transcript: values.audio_transcript?.trim() || undefined,
         video_description: values.video_description?.trim() || undefined,
 
-        image_file: (values.image_file as FileList | undefined)?.[0],
-        audio_file: (values.audio_file as FileList | undefined)?.[0],
-        video_file: (values.video_file as FileList | undefined)?.[0],
+        image_file: firstFile(values.image_file),
+        audio_file: firstFile(values.audio_file),
+        video_file: firstFile(values.video_file),
       }
 
       const res = await createManifestation(payload)
@@ -541,9 +552,9 @@ export function NewManifestationPage() {
 
     try {
       const desc = (form.getValues('description_text') || '').trim()
-      const img = (form.getValues('image_file') as FileList | undefined)?.[0]
-      const aud = (form.getValues('audio_file') as FileList | undefined)?.[0]
-      const vid = (form.getValues('video_file') as FileList | undefined)?.[0]
+      const img = firstFile(form.getValues('image_file'))
+      const aud = firstFile(form.getValues('audio_file'))
+      const vid = firstFile(form.getValues('video_file'))
 
       const draftForIza: any = {
         description_text: desc || undefined,
@@ -815,11 +826,17 @@ export function NewManifestationPage() {
               <div className="rounded-xl border border-[rgba(var(--c-border),0.75)] bg-[rgba(var(--c-surface),0.75)] p-4">
                 <p className="text-sm font-extrabold text-[rgb(var(--c-text))]">Imagem</p>
                 <p className="mt-1 text-xs text-[rgba(var(--c-text),0.70)]">Opcional. JPG/PNG.</p>
-                <label className="mt-3 flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-[rgba(var(--c-border),0.90)] bg-[rgba(var(--c-surface),0.85)] px-3 py-3 text-sm font-semibold text-[rgb(var(--c-text))] hover:bg-[rgba(var(--c-border),0.18)]">
-                  <Paperclip className="h-4 w-4" aria-hidden="true" />
-                  Anexar imagem
-                  <input type="file" accept="image/*" className="sr-only" {...form.register('image_file')} />
-                </label>
+                <MediaAttachmentField
+                  control={form.control}
+                  name="image_file"
+                  mode="image"
+                  embedded
+                  accept="image/*"
+                  capture="environment"
+                  selectLabel="Escolher imagem"
+                  recordLabel="Tirar foto"
+                  afterPickFocusId="image_alt"
+                />
 
                 <label className="mt-3 block text-xs font-semibold text-[rgb(var(--c-text))]" htmlFor="image_alt">
                   Texto alternativo da imagem (obrigatório se anexar)
@@ -837,11 +854,17 @@ export function NewManifestationPage() {
               <div className="rounded-xl border border-[rgba(var(--c-border),0.75)] bg-[rgba(var(--c-surface),0.75)] p-4">
                 <p className="text-sm font-extrabold text-[rgb(var(--c-text))]">Áudio</p>
                 <p className="mt-1 text-xs text-[rgba(var(--c-text),0.70)]">Opcional. mp3/m4a/wav.</p>
-                <label className="mt-3 flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-[rgba(var(--c-border),0.90)] bg-[rgba(var(--c-surface),0.85)] px-3 py-3 text-sm font-semibold text-[rgb(var(--c-text))] hover:bg-[rgba(var(--c-border),0.18)]">
-                  <Paperclip className="h-4 w-4" aria-hidden="true" />
-                  Anexar áudio
-                  <input type="file" accept="audio/*" className="sr-only" {...form.register('audio_file')} />
-                </label>
+                <MediaAttachmentField
+                  control={form.control}
+                  name="audio_file"
+                  mode="audio"
+                  embedded
+                  accept="audio/*"
+                  capture="microphone"
+                  selectLabel="Escolher áudio"
+                  recordLabel="Gravar áudio"
+                  afterPickFocusId="audio_transcript"
+                />
 
                 <label
                   className="mt-3 block text-xs font-semibold text-[rgb(var(--c-text))]"
@@ -865,11 +888,17 @@ export function NewManifestationPage() {
               <div className="rounded-xl border border-[rgba(var(--c-border),0.75)] bg-[rgba(var(--c-surface),0.75)] p-4">
                 <p className="text-sm font-extrabold text-[rgb(var(--c-text))]">Vídeo</p>
                 <p className="mt-1 text-xs text-[rgba(var(--c-text),0.70)]">Opcional. mp4/mov.</p>
-                <label className="mt-3 flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-[rgba(var(--c-border),0.90)] bg-[rgba(var(--c-surface),0.85)] px-3 py-3 text-sm font-semibold text-[rgb(var(--c-text))] hover:bg-[rgba(var(--c-border),0.18)]">
-                  <Paperclip className="h-4 w-4" aria-hidden="true" />
-                  Anexar vídeo
-                  <input type="file" accept="video/*" className="sr-only" {...form.register('video_file')} />
-                </label>
+                <MediaAttachmentField
+                  control={form.control}
+                  name="video_file"
+                  mode="video"
+                  embedded
+                  accept="video/*"
+                  capture="environment"
+                  selectLabel="Escolher vídeo"
+                  recordLabel="Gravar vídeo"
+                  afterPickFocusId="video_description"
+                />
 
                 <label
                   className="mt-3 block text-xs font-semibold text-[rgb(var(--c-text))]"
