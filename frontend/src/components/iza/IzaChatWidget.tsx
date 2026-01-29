@@ -182,16 +182,6 @@ export function IzaChatWidget() {
   const [input, setInput] = useState('')
   const [helpOpen, setHelpOpen] = useState(false)
 
-
-  // Dica curta no botão do chat (descoberta)
-  const [chatHintOpen, setChatHintOpen] = useState(true)
-
-  useEffect(() => {
-    if (!chatHintOpen) return
-    const t = window.setTimeout(() => setChatHintOpen(false), 60000)
-    return () => window.clearTimeout(t)
-  }, [chatHintOpen])
-
   // TTS (acessibilidade)
   const tts = useTts('pt-BR')
   const [ttsEnabled, setTtsEnabled] = useState<boolean>(() => {
@@ -208,6 +198,7 @@ export function IzaChatWidget() {
   // STT (voz)
   const speech = useSpeechRecognition({ lang: 'pt-BR', interimResults: true, continuous: false })
   const lastConsumedSpeechRef = useRef<string>('')
+  const lastMicKickRef = useRef<number>(0)
 
   // Conversa por voz (mãos livres): STT -> LLM -> TTS -> STT...
   const [voiceChat, setVoiceChat] = useState<boolean>(() => {
@@ -353,9 +344,14 @@ export function IzaChatWidget() {
 
   function close() {
     try {
-      speech.abort()
+      // stop() tende a ser mais “limpo” que abort()
+      if (speech.listening) speech.stop()
     } catch {
-      // ignore
+      try {
+        speech.abort()
+      } catch {
+        // ignore
+      }
     }
     tts.cancel()
     setOpen(false)
@@ -365,12 +361,44 @@ export function IzaChatWidget() {
     if (!open) return
     if (!voiceChat) return
     if (!speech.supported) return
-    if (speech.status === 'error' || speech.error) return
     if (isThinking) return
     if (ttsEnabled && tts.speaking) return
     if (speech.listening) return
+
+    // Evita loop agressivo (ex.: start->falha->retry em milissegundos)
+    const now = Date.now()
+    if (now - lastMicKickRef.current < 550) return
+    lastMicKickRef.current = now
+
+    // Erros fatais: não adianta tentar reiniciar automaticamente
+    const fatal =
+      speech.errorCode === 'not-allowed' ||
+      speech.errorCode === 'service-not-allowed' ||
+      speech.errorCode === 'audio-capture'
+
+    if (fatal) return
+
+    // Recupera de estados transitórios (ex.: start-failed logo após TTS / stop)
+    if (speech.status === 'error' || speech.error) {
+      speech.reset()
+      return
+    }
+
     speech.start()
-  }, [open, voiceChat, speech.supported, speech.status, speech.error, isThinking, ttsEnabled, tts.speaking, speech.listening, speech.start])
+  }, [
+    open,
+    voiceChat,
+    speech.supported,
+    speech.status,
+    speech.error,
+    speech.errorCode,
+    isThinking,
+    ttsEnabled,
+    tts.speaking,
+    speech.listening,
+    speech.start,
+    speech.reset,
+  ])
 
   // Quando ativar conversa por voz, garanta TTS habilitado.
   useEffect(() => {
@@ -417,6 +445,26 @@ export function IzaChatWidget() {
     if (speech.listening) return
     maybeStartListening()
   }, [open, voiceChat, speech.supported, isThinking, ttsEnabled, tts.speaking, speech.listening, maybeStartListening])
+  // Watchdog (mãos-livres): alguns navegadores encerram o reconhecimento após TTS/erros transitórios.
+  // Mantém o microfone “sempre pronto” sem travar o app.
+  useEffect(() => {
+    if (!open) return
+    if (!voiceChat) return
+    if (!speech.supported) return
+
+    const id = window.setInterval(() => {
+      if (!open) return
+      if (!voiceChat) return
+      if (isThinking) return
+      if (ttsEnabled && tts.speaking) return
+      if (speech.listening) return
+      maybeStartListening()
+    }, 2000)
+
+    return () => window.clearInterval(id)
+  }, [open, voiceChat, speech.supported, isThinking, ttsEnabled, tts.speaking, speech.listening, maybeStartListening])
+
+
 
   function speakAssistant(text: string) {
     if (!ttsEnabled || !tts.supported) {
@@ -425,7 +473,19 @@ export function IzaChatWidget() {
     }
 
     // Evita eco: não escutar enquanto fala
-    if (speech.listening) speech.abort()
+    if (speech.listening) {
+      try {
+        speech.stop()
+      } catch {
+        try {
+          speech.abort()
+        } catch {
+          // ignore
+        }
+      }
+      // Limpa estados transitórios (ex.: 'aborted' / 'start-failed')
+      speech.reset()
+    }
 
     tts.speak(text, {
       rate: ttsRate,
@@ -922,31 +982,12 @@ export function IzaChatWidget() {
         whileHover={{ scale: 1.04 }}
         whileTap={{ scale: 0.98 }}
         onClick={() => {
-          setChatHintOpen(false)
           setOpen(true)
           setHelpOpen(false)
         }}
       >
         <span className="absolute -inset-2 -z-10 rounded-full bg-[rgba(var(--c-primary),0.18)] blur-md" aria-hidden="true" />
         <MessageCircle className="h-7 w-7" aria-hidden="true" />
-        <AnimatePresence>
-          {!open && chatHintOpen && (
-            <motion.span
-              initial={{ opacity: 0, y: 8, scale: 0.98 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 8, scale: 0.98 }}
-              className="pointer-events-none absolute bottom-[calc(100%+10px)] right-0 whitespace-nowrap rounded-full bg-white/95 px-3 py-1.5 text-sm font-medium text-slate-900 shadow-[var(--shadow-elev-3)] ring-1 ring-black/10 backdrop-blur-md"
-            >
-              <span className="sm:hidden">Chat da IZA</span>
-              <span className="hidden sm:inline">Oi! Posso te ajudar?</span>
-
-              <span
-                aria-hidden="true"
-                className="absolute right-7 top-full h-0 w-0 border-x-[7px] border-x-transparent border-t-[7px] border-t-white/95 drop-shadow-[0_1px_0_rgba(0,0,0,0.10)]"
-              />
-            </motion.span>
-          )}
-        </AnimatePresence>
         <span
           className="absolute -top-1 -right-1 inline-flex h-4 w-4 items-center justify-center rounded-full bg-white text-[rgb(var(--c-primary))] ring-1 ring-[rgba(var(--c-primary),0.25)]"
           aria-hidden="true"
