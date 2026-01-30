@@ -1010,7 +1010,7 @@ export function IzaChatWidget() {
             <motion.div
               role="dialog"
               aria-label="Chat com a IZA"
-              className="fixed bottom-24 left-4 right-4 z-[61] flex h-[min(80vh,760px)] flex-col overflow-hidden rounded-2xl border border-[rgba(var(--c-border),0.85)] bg-[rgba(var(--c-surface),0.95)] shadow-[var(--shadow-elev-3)] backdrop-blur-md sm:left-auto sm:right-6 sm:w-[480px]"
+              className="fixed bottom-4 left-4 right-4 z-[61] flex h-[min(80vh,760px)] flex-col overflow-hidden rounded-2xl border border-[rgba(var(--c-border),0.85)] bg-[rgba(var(--c-surface),0.95)] shadow-[var(--shadow-elev-3)] backdrop-blur-md sm:left-auto sm:right-6 sm:w-[480px]"
               initial={{ opacity: 0, y: 16, scale: 0.98 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 16, scale: 0.98 }}
@@ -1481,7 +1481,7 @@ export function IzaChatWidget() {
                 </div>
 
                 {attachmentsOpen && (
-                  <div className="mb-3 rounded-2xl border border-[rgba(var(--c-border),0.70)] bg-[rgba(var(--c-surface),0.75)] p-3">
+                  <div className="mb-3 max-h-[28vh] overflow-y-auto overscroll-contain rounded-2xl border border-[rgba(var(--c-border),0.70)] bg-[rgba(var(--c-surface),0.75)] p-3 pr-4">
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <p className="text-sm font-extrabold text-[rgb(var(--c-text))]">Anexos e acessibilidade</p>

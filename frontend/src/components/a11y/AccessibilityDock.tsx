@@ -69,6 +69,7 @@ type A11yPrefs = {
 const STORAGE_KEY = 'participa_df:a11y:v2'
 const LEGACY_STORAGE_KEY = 'participa_df:a11y:v1'
 const DOCK_KEY = 'participa_df:a11y:dock_open:v1'
+const LOWVISION_PREV_KEY = 'participa_df:a11y:lowvision_prev:v1'
 const STYLE_ID = 'participa-df-a11y-global-style'
 
 function clamp(n: number, min: number, max: number) {
@@ -237,6 +238,28 @@ body{
   word-spacing: var(--a11y-word-spacing, 0em);
 }
 
+
+/* =========================================================
+   Espaçamento de linhas (corrige utilitários Tailwind leading-*)
+   - Muitos trechos usam leading-relaxed/leading-tight etc.
+   - Esses utilitários definem line-height no elemento e vencem o body.
+   - Aqui, quando o usuário escolhe um modo de espaçamento, forçamos o line-height.
+   ========================================================= */
+
+html[data-a11y-lineheight="compact"] :where(p, li, dt, dd, blockquote, label, small, caption, button, a, textarea),
+html[data-a11y-lineheight="relaxed"] :where(p, li, dt, dd, blockquote, label, small, caption, button, a, textarea),
+html[data-a11y-lineheight="extra"] :where(p, li, dt, dd, blockquote, label, small, caption, button, a, textarea){
+  line-height: var(--a11y-line-height, 1.5) !important;
+}
+
+/* Sobrescreve utilitários Tailwind leading-* onde existirem */
+html[data-a11y-lineheight="compact"] :where([class*="leading-"]),
+html[data-a11y-lineheight="relaxed"] :where([class*="leading-"]),
+html[data-a11y-lineheight="extra"] :where([class*="leading-"]){
+  line-height: var(--a11y-line-height, 1.5) !important;
+}
+
+
 /* Focus ring sempre visível (especialmente para navegação por teclado) */
 :focus-visible{
   outline: 3px solid rgba(var(--a11y-brand-blue), 0.85);
@@ -383,19 +406,19 @@ html.a11y-contrast :where(.glass){
 
 /* Alto contraste (Ferramentas > Cores): na área principal do site, as superfícies "glass" viram fundo claro com texto preto
    (evita texto branco estourado e melhora a leitura do hero e dos cards principais) */
-html.a11y-contrast :where(main .glass){
+html.a11y-contrast:not(.a11y-lowvision) :where(main .glass){
   background-color: #fff !important;
   border-color: rgba(0,0,0,0.80) !important;
 }
-html.a11y-contrast :where(main .glass, main .glass *):not([vw]):not([vw] *):not(svg){
+html.a11y-contrast:not(.a11y-lowvision) :where(main .glass, main .glass *):not([vw]):not([vw] *):not(svg){
   color: #000 !important;
 }
-html.a11y-contrast :where(main .glass a){
+html.a11y-contrast:not(.a11y-lowvision) :where(main .glass a){
   color: #000 !important;
   text-decoration: underline !important;
   text-underline-offset: 3px;
 }
-html.a11y-contrast :where(main .glass a[role="button"], main .glass a[class*="bg-"], main .glass a[class*="btn"], main .glass button, main .glass [role="button"]){
+html.a11y-contrast:not(.a11y-lowvision) :where(main .glass a[role="button"], main .glass a[class*="bg-"], main .glass a[class*="btn"], main .glass button, main .glass [role="button"]){
   background-color: rgb(var(--a11y-brand-yellow)) !important;
   color: #000 !important;
   border: 1px solid rgba(0,0,0,0.85) !important;
@@ -460,6 +483,12 @@ html.a11y-lowvision :where(h1,h2,h3,h4,h5,h6){
 html.a11y-lowvision :where(p,span,li,div,label,small,dt,dd){
   color: rgb(var(--a11y-brand-yellow)) !important;
 }
+
+/* Callout de ajuda (formulário): mantém texto branco para máxima legibilidade */
+html.a11y-lowvision :where(main .glass.max-w-md p, main .glass.max-w-md p *):not(svg){
+  color: #fff !important;
+}
+
 html.a11y-lowvision :where(a){
   color: #ffffff !important;
   text-decoration: underline !important;
@@ -1208,10 +1237,19 @@ export function AccessibilityDock() {
 
     // line-height por modo
     const lh =
-      p.lineHeight === 'compact' ? 1.35 : p.lineHeight === 'relaxed' ? 1.65 : p.lineHeight === 'extra' ? 1.85 : 1.5
+      p.lineHeight === 'compact'
+        ? 1.35
+        : p.lineHeight === 'relaxed'
+          ? 1.85
+          : p.lineHeight === 'extra'
+            ? 2.05
+            : 1.5
 
     root.style.setProperty('--font-scale', String(effectiveScale))
     root.style.setProperty('--a11y-line-height', String(lh))
+
+    // Permite CSS sobrescrever utilitários Tailwind `leading-*` quando o usuário escolhe espaçamento
+    root.setAttribute('data-a11y-lineheight', p.lineHeight)
 
     // Temas
     root.classList.toggle('a11y-theme-dark', p.theme === 'dark')
@@ -1685,31 +1723,55 @@ export function AccessibilityDock() {
 
   // ====== Perfis ======
   const toggleLowVision = useCallback((next: boolean) => {
-    setPrefs((p) => {
-      if (next) {
-        lowVisionPrevRef.current = { fontScale: p.fontScale, highContrast: p.highContrast, cursor: p.cursor, cursorThick: p.cursorThick }
-        return {
-          ...p,
-          profileLowVision: true,
-          highContrast: true,
-          fontScale: Math.max(p.fontScale, 2),
-          cursor: p.cursor === 'default' ? 'white' : p.cursor,
-          cursorThick: true,
-        }
+  setPrefs((p) => {
+    if (next) {
+      const prev = { fontScale: p.fontScale, highContrast: p.highContrast, cursor: p.cursor, cursorThick: p.cursorThick }
+      lowVisionPrevRef.current = prev
+      try {
+        localStorage.setItem(LOWVISION_PREV_KEY, JSON.stringify(prev))
+      } catch {
+        // ignore
       }
 
-      const prev = lowVisionPrevRef.current
-      lowVisionPrevRef.current = null
       return {
         ...p,
-        profileLowVision: false,
-        fontScale: prev?.fontScale ?? p.fontScale,
-        highContrast: prev?.highContrast ?? p.highContrast,
-        cursor: prev?.cursor ?? p.cursor,
-        cursorThick: prev?.cursorThick ?? p.cursorThick,
+        profileLowVision: true,
+        highContrast: true,
+        fontScale: Math.max(p.fontScale, 2),
+        cursor: p.cursor === 'default' ? 'white' : p.cursor,
+        cursorThick: true,
       }
-    })
-  }, [])
+    }
+
+    // Restaura preferências anteriores mesmo após refresh (prev fica em localStorage).
+    let prev = lowVisionPrevRef.current as any
+    if (!prev) {
+      try {
+        const raw = localStorage.getItem(LOWVISION_PREV_KEY)
+        if (raw) prev = JSON.parse(raw)
+      } catch {
+        // ignore
+      }
+    }
+
+    lowVisionPrevRef.current = null
+    try {
+      localStorage.removeItem(LOWVISION_PREV_KEY)
+    } catch {
+      // ignore
+    }
+
+    return {
+      ...p,
+      profileLowVision: false,
+      // Se não houver snapshot, volta ao padrão (1.0) para garantir que o zoom desative imediatamente.
+      fontScale: typeof prev?.fontScale === 'number' ? clamp(prev.fontScale, 0.85, 2) : 1,
+      highContrast: typeof prev?.highContrast === 'boolean' ? prev.highContrast : false,
+      cursor: prev?.cursor ? coerceCursor(prev.cursor) : p.cursor,
+      cursorThick: typeof prev?.cursorThick === 'boolean' ? prev.cursorThick : p.cursorThick,
+    }
+  })
+}, [])
 
   const toggleEpilepsyProfile = useCallback((next: boolean) => {
     setPrefs((p) => {
