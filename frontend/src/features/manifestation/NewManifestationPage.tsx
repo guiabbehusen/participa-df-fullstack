@@ -864,6 +864,16 @@ export function NewManifestationPage() {
                   selectLabel="Escolher áudio"
                   recordLabel="Gravar áudio"
                   afterPickFocusId="audio_transcript"
+                  autoTranscribe
+                  autoTranscribeLang="pt-BR"
+                  onAutoTranscription={(text) => {
+                    // Preenche automaticamente a transcrição para acessibilidade (o usuário ainda pode editar)
+                    form.setValue('audio_transcript', text, {
+                      shouldDirty: true,
+                      shouldTouch: true,
+                      shouldValidate: true,
+                    })
+                  }}
                 />
 
                 <label

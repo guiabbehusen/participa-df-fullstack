@@ -19,6 +19,12 @@ function formatBytes(bytes: number) {
   return `${n.toFixed(u === 0 ? 0 : 1)} ${units[u]}`
 }
 
+
+function normalizeWhitespace(s: string) {
+  return (s || '').replace(/\s+/g, ' ').trim()
+}
+
+
 function extFromMime(mime: string, mode: MediaAttachmentMode) {
   const m = (mime || '').toLowerCase()
   if (mode === 'image') {
@@ -86,6 +92,14 @@ type Props<T extends FieldValues> = {
   /** Quando o usuário anexar/gravar, opcionalmente focar este id (ex.: campo de descrição/alt/transcrição). */
   afterPickFocusId?: string
 
+
+/** Ativa transcrição automática (Speech-to-Text) ao gravar áudio no navegador. */
+autoTranscribe?: boolean
+/** Idioma para transcrição automática (padrão: pt-BR). */
+autoTranscribeLang?: string
+/** Callback para receber o texto transcrito automaticamente. */
+onAutoTranscription?: (text: string) => void
+
   disabled?: boolean
   embedded?: boolean
   className?: string
@@ -100,6 +114,9 @@ export function MediaAttachmentField<T extends FieldValues>({
   selectLabel,
   recordLabel,
   afterPickFocusId,
+  autoTranscribe,
+  autoTranscribeLang,
+  onAutoTranscription,
   disabled,
   embedded,
   className,
@@ -123,6 +140,27 @@ export function MediaAttachmentField<T extends FieldValues>({
   const tickRef = useRef<number | null>(null)
 
   const liveVideoRef = useRef<HTMLVideoElement | null>(null)
+
+
+// Speech-to-Text (Web Speech API) — somente para áudio gravado no navegador
+const sttAvailable = useMemo(() => {
+  if (typeof window === 'undefined') return false
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const w: any = window as any
+  return !!(w.SpeechRecognition || w.webkitSpeechRecognition)
+}, [])
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const speechRef = useRef<any | null>(null)
+const speechFinalRef = useRef<string>('')
+const speechLiveRef = useRef<string>('')
+const emitRequestedRef = useRef<boolean>(false)
+const emittedRef = useRef<boolean>(false)
+
+const [sttStatus, setSttStatus] = useState<'idle' | 'listening' | 'finalizing' | 'done' | 'unavailable' | 'error'>(
+  sttAvailable ? 'idle' : 'unavailable',
+)
+const [sttPreview, setSttPreview] = useState<string>('')
 
   const icon = mode === 'image' ? Camera : mode === 'audio' ? Mic : Video
   const Icon = icon
@@ -199,6 +237,129 @@ export function MediaAttachmentField<T extends FieldValues>({
     stopStream()
   }
 
+
+
+function resetSpeechState() {
+  try {
+    speechRef.current?.abort?.()
+  } catch {
+    // ignore
+  }
+  speechRef.current = null
+  speechFinalRef.current = ''
+  speechLiveRef.current = ''
+  emitRequestedRef.current = false
+  emittedRef.current = false
+  setSttPreview('')
+  setSttStatus(sttAvailable ? 'idle' : 'unavailable')
+}
+
+function tryEmitTranscript() {
+  if (mode !== 'audio') return
+  if (!autoTranscribe) return
+  if (!onAutoTranscription) return
+  if (emittedRef.current) return
+  if (!emitRequestedRef.current) return
+
+  const text = normalizeWhitespace(speechFinalRef.current || speechLiveRef.current)
+  if (!text) return
+
+  emittedRef.current = true
+  emitRequestedRef.current = false
+  onAutoTranscription(text)
+  setSttStatus('done')
+}
+
+function startSpeechRecognition() {
+  if (mode !== 'audio') return
+  if (!autoTranscribe) return
+  if (!sttAvailable) return
+
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const w: any = window as any
+    const Ctor = w.SpeechRecognition || w.webkitSpeechRecognition
+    if (!Ctor) return
+
+    resetSpeechState()
+
+    const rec = new Ctor()
+    rec.lang = autoTranscribeLang || 'pt-BR'
+    rec.continuous = true
+    rec.interimResults = true
+    rec.maxAlternatives = 1
+
+    speechRef.current = rec
+    setSttStatus('listening')
+
+    rec.onresult = (ev: any) => {
+      try {
+        let interim = ''
+        for (let i = ev.resultIndex; i < ev.results.length; i += 1) {
+          const r = ev.results[i]
+          const txt = r?.[0]?.transcript || ''
+          if (!txt) continue
+          if (r.isFinal) {
+            speechFinalRef.current = `${speechFinalRef.current} ${txt}`.trim()
+          } else {
+            interim = `${interim} ${txt}`.trim()
+          }
+        }
+        const combined = normalizeWhitespace(`${speechFinalRef.current} ${interim}`)
+        speechLiveRef.current = combined
+        setSttPreview(combined)
+      } catch {
+        // ignore
+      }
+    }
+
+    rec.onerror = () => {
+      setSttStatus('error')
+    }
+
+    rec.onend = () => {
+      // Ao parar a gravação, emitimos a transcrição (se houver)
+      tryEmitTranscript()
+      speechRef.current = null
+      if (emitRequestedRef.current) {
+        // se pediu para emitir mas não houve texto, volta para idle
+        setSttStatus(sttAvailable ? 'idle' : 'unavailable')
+      }
+    }
+
+    rec.start()
+  } catch {
+    setSttStatus('error')
+  }
+}
+
+function stopSpeechRecognitionForEmit() {
+if (mode !== 'audio') return
+if (!autoTranscribe) return
+if (!sttAvailable) return
+
+// Se por algum motivo o reconhecimento não iniciou, não entra em "finalizando"
+if (!speechRef.current) {
+  emitRequestedRef.current = false
+  emittedRef.current = false
+  setSttStatus(sttAvailable ? 'idle' : 'unavailable')
+  return
+}
+
+emitRequestedRef.current = true
+emittedRef.current = false
+setSttStatus('finalizing')
+
+try {
+  speechRef.current?.stop?.()
+} catch {
+  // ignore
+  // se não conseguiu parar “graciosamente”, tenta emitir o que já capturou
+  tryEmitTranscript()
+  resetSpeechState()
+}
+}
+
   async function startRecording() {
     setRecError(null)
 
@@ -226,6 +387,11 @@ export function MediaAttachmentField<T extends FieldValues>({
       const stream = await navigator.mediaDevices.getUserMedia(constraints)
       streamRef.current = stream
 
+
+      // Inicia transcrição automática (Speech-to-Text) em paralelo à gravação (somente áudio)
+      if (mode === 'audio') {
+        startSpeechRecognition()
+      }
       if (mode === 'video' && liveVideoRef.current) {
         try {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -252,6 +418,9 @@ export function MediaAttachmentField<T extends FieldValues>({
           const f = new File([blob], filename, { type: blob.type || recorder.mimeType || undefined })
           field.onChange(f)
           focusAfterPick()
+
+          // Tenta preencher a transcrição automaticamente (se disponível)
+          tryEmitTranscript()
         } catch (e) {
           setRecError('Não consegui finalizar a gravação. Tente novamente.')
         } finally {
@@ -267,6 +436,8 @@ export function MediaAttachmentField<T extends FieldValues>({
       tickRef.current = window.setInterval(() => setRecSeconds((s) => s + 1), 1000)
     } catch (e: any) {
       resetRecorderState()
+      // Se a transcrição automática estava ativa, garante cleanup.
+      resetSpeechState()
       const msg = e?.name === 'NotAllowedError'
         ? 'Permissão negada. Autorize o uso do microfone/câmera para gravar.'
         : 'Não consegui iniciar a gravação. Verifique o dispositivo e tente novamente.'
@@ -276,6 +447,11 @@ export function MediaAttachmentField<T extends FieldValues>({
 
   function stopRecording() {
     try {
+      // Para áudio, tenta finalizar a transcrição automaticamente
+      if (mode === 'audio') {
+        stopSpeechRecognitionForEmit()
+      }
+
       recorderRef.current?.stop()
     } catch {
       resetRecorderState()
@@ -407,6 +583,25 @@ export function MediaAttachmentField<T extends FieldValues>({
             <p className="text-xs font-semibold text-[rgb(var(--c-text))]" aria-live="polite">
               Gravando… {recSeconds}s
             </p>
+          )}
+
+          {recording && mode === 'audio' && autoTranscribe && (
+            <div className="mt-1" aria-live="polite">
+              <p className="text-[11px] font-semibold text-[rgba(var(--c-text),0.72)]">
+                {sttStatus === 'listening'
+                  ? 'Transcrevendo automaticamente…'
+                  : sttStatus === 'finalizing'
+                    ? 'Finalizando transcrição…'
+                    : sttStatus === 'error'
+                      ? 'Transcrição automática indisponível (preencha manualmente).'
+                      : ''}
+              </p>
+              {sttPreview && sttStatus !== 'error' && (
+                <p className="mt-1 line-clamp-2 text-[11px] text-[rgba(var(--c-text),0.70)]">
+                  {sttPreview}
+                </p>
+              )}
+            </div>
           )}
 
           {!file && !recording && !recError && (
