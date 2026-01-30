@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import {
   Accessibility,
   Activity,
@@ -59,6 +60,10 @@ type A11yPrefs = {
   smartNav: boolean
   cursor: CursorMode
   cursorThick: boolean
+
+  // Som
+  muteSite: boolean
+  hoverReader: boolean
 }
 
 const STORAGE_KEY = 'participa_df:a11y:v2'
@@ -110,6 +115,9 @@ function defaultPrefs(): A11yPrefs {
     smartNav: false,
     cursor: 'default',
     cursorThick: false,
+
+    muteSite: false,
+    hoverReader: false,
   }
 }
 
@@ -158,6 +166,9 @@ function loadPrefs(): A11yPrefs {
         smartNav: !!parsed.smartNav,
         cursor: coerceCursor(parsed.cursor),
         cursorThick: !!parsed.cursorThick,
+
+        muteSite: !!(parsed as any).muteSite,
+        hoverReader: !!(parsed as any).hoverReader,
       }
     }
   } catch {
@@ -249,12 +260,12 @@ html.a11y-reduce-motion *, html.a11y-epilepsy *{
 }
 
 /* Modo Monocromático */
-html.a11y-mono #root, html.a11y-mono body{
+html.a11y-mono #root{
   filter: grayscale(1) contrast(1.1);
 }
 
 /* Daltonismo: reduz saturação e aumenta contraste levemente */
-html.a11y-daltonism #root, html.a11y-daltonism body{
+html.a11y-daltonism #root{
   filter: saturate(0.65) contrast(1.08);
 }
 
@@ -288,6 +299,10 @@ html.a11y-contrast body{
   background: #000 !important;
   color: #fff !important;
 }
+html.a11y-contrast #root{
+  background: #000 !important;
+  background-image: none !important;
+}
 html.a11y-contrast :where(h1,h2,h3,h4,h5,h6,p,span,li,div,label,small,strong,em,dt,dd,th,td,caption){
   color: #fff !important;
 }
@@ -320,9 +335,24 @@ html.a11y-contrast :where([class*="text-slate-"],[class*="text-gray-"],[class*="
   color: #fff !important;
 }
 
+/* Ajuste específico (Home): "chip" do hero pode estar em superfície clara (texto precisa ser escuro) */
+html.a11y-contrast :where(main .chip, main .chip *):not(svg){
+  color: rgb(var(--a11y-brand-yellow)) !important;
+}
+html.a11y-contrast :where(main .chip){
+  background-color: #000 !important;
+  border-color: rgba(255,255,255,0.78) !important;
+}
+
 /* Normaliza fundos claros de Tailwind para manter contraste */
 html.a11y-contrast :where(.bg-white,.bg-slate-50,.bg-slate-100,.bg-gray-50,.bg-gray-100,.bg-zinc-50,.bg-zinc-100,.bg-neutral-50,.bg-neutral-100){
   background-color: #000 !important;
+}
+
+/* Também cobre utilitários Tailwind com opacidade (ex: bg-white/70) */
+html.a11y-contrast :where([class*="bg-white/"],[class*="bg-slate-"],[class*="bg-gray-"],[class*="bg-zinc-"],[class*="bg-neutral-"],[class*="bg-["]){
+  background-color: #000 !important;
+  background-image: none !important;
 }
 
 /* Normaliza bordas claras de Tailwind */
@@ -330,6 +360,15 @@ html.a11y-contrast :where(.border-white,.border-slate-200,.border-gray-200,.bord
   border-color: rgba(255,255,255,0.78) !important;
 }
 
+
+/* Remove gradientes/“meshes” em alto contraste para garantir legibilidade */
+html.a11y-contrast :where([class*="bg-gradient"],[class*="from-"],[class*="via-"],[class*="to-"]){
+  background-image: none !important;
+}
+html.a11y-contrast :where([class*="backdrop-"]){
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
 
 /* Glassmorphism: em modos de alto contraste/baixa visão, vira superfície sólida (evita texto branco sobre fundo claro translúcido) */
 html.a11y-contrast :where(.glass){
@@ -340,10 +379,59 @@ html.a11y-contrast :where(.glass){
   -webkit-backdrop-filter: none !important;
   border-color: rgba(255,255,255,0.78) !important;
 }
+
+
+/* Alto contraste (Ferramentas > Cores): na área principal do site, as superfícies "glass" viram fundo claro com texto preto
+   (evita texto branco estourado e melhora a leitura do hero e dos cards principais) */
+html.a11y-contrast :where(main .glass){
+  background-color: #fff !important;
+  border-color: rgba(0,0,0,0.80) !important;
+}
+html.a11y-contrast :where(main .glass, main .glass *):not([vw]):not([vw] *):not(svg){
+  color: #000 !important;
+}
+html.a11y-contrast :where(main .glass a){
+  color: #000 !important;
+  text-decoration: underline !important;
+  text-underline-offset: 3px;
+}
+html.a11y-contrast :where(main .glass a[role="button"], main .glass a[class*="bg-"], main .glass a[class*="btn"], main .glass button, main .glass [role="button"]){
+  background-color: rgb(var(--a11y-brand-yellow)) !important;
+  color: #000 !important;
+  border: 1px solid rgba(0,0,0,0.85) !important;
+  text-decoration: none !important;
+}
+
 html.a11y-contrast :where(.glass)::before,
 html.a11y-contrast :where(.glass)::after{
   background: none !important;
   filter: none !important;
+}
+
+/* Ajuste fino (Alto Contraste): reduz “branco estourado” e garante leitura no topo da Home */
+html.a11y-contrast :where(main h1, main h2, main h3){
+  color: rgb(var(--a11y-brand-yellow)) !important;
+}
+
+/* Home (título principal): Balancer pode envolver texto em spans.
+   Em alto contraste, garantimos cor escura para evitar ficar branco “estourado” em superfícies claras. */
+html.a11y-contrast main h1.text-slate-900,
+html.a11y-contrast main h1.text-slate-900 *:not(svg){
+  color: rgb(15 23 42) !important;
+}
+
+html.a11y-contrast :where(main p){
+  color: rgba(255,255,255,0.92) !important;
+}
+html.a11y-contrast :where(main p.text-slate-700, main .text-slate-700){
+  color: rgb(var(--a11y-brand-yellow)) !important;
+}
+html.a11y-contrast :where(main p.text-slate-600, main .text-slate-600, main p.text-slate-800, main .text-slate-800){
+  color: rgb(var(--a11y-brand-yellow)) !important;
+}
+/* Destaques (cards/labels) no topo: evita depender só de branco */
+html.a11y-contrast :where(main [class*="font-semibold"], main [class*="font-bold"], main [class*="font-extrabold"]):not(a):not(button){
+  color: rgb(var(--a11y-brand-yellow)) !important;
 }
 
 /* Baixa visão: contraste + zoom + layout em coluna única (evita “quebrar”) */
@@ -564,7 +652,9 @@ function ensureVlibrasInstalled(): Promise<void> {
         const st = document.createElement('style')
         st.id = styleId
         st.textContent = `
+          /* Mantém apenas o botão do app (evita 2 botões na tela) */
           [vw-access-button]{
+            display: none !important;
             opacity: 0 !important;
             pointer-events: none !important;
           }
@@ -591,8 +681,8 @@ function ensureVlibrasInstalled(): Promise<void> {
       }
 
       if (existing) {
-        // Se já existe, só tenta inicializar
-        onReady()
+        // Se o index.html já inseriu o script, evitamos reinicializar (previne duplicar o widget).
+        resolve()
         return
       }
 
@@ -624,9 +714,23 @@ function ToggleSwitch({
   icon: ReactNode
 }) {
   return (
-    <div className="grid grid-cols-[auto,1fr,auto] items-start gap-3 rounded-2xl border border-[rgba(var(--c-border),0.80)] bg-[rgba(var(--c-surface),0.75)] px-3 py-3">
+    <div
+      className={[
+        'grid grid-cols-[auto,1fr,auto] items-start gap-3 rounded-2xl border px-3 py-3 shadow-[var(--shadow-elev-1)] transition',
+        checked
+          ? 'border-[rgba(var(--c-primary),0.55)] bg-[rgba(var(--c-primary),0.06)]'
+          : 'border-[rgba(var(--c-border),0.80)] bg-[rgba(var(--c-surface),0.78)]',
+      ].join(' ')}
+    >
       <div className="flex min-w-0 items-start gap-3">
-        <span className="mt-0.5 inline-flex h-9 w-9 flex-none items-center justify-center rounded-xl bg-[rgba(var(--c-primary),0.12)] text-[rgb(var(--c-primary))]">
+        <span
+          className={[
+            'inline-flex h-10 w-10 flex-none items-center justify-center rounded-xl border border-[rgba(var(--c-border),0.70)] [&>svg]:h-5 [&>svg]:w-5',
+            checked
+              ? 'bg-[rgba(var(--c-primary),0.14)] text-[rgb(var(--c-primary))]'
+              : 'bg-[rgba(var(--c-surface),0.92)] text-[rgba(var(--c-text),0.75)]',
+          ].join(' ')}
+        >
           {icon}
         </span>
         <div className="min-w-0">
@@ -641,7 +745,7 @@ function ToggleSwitch({
         aria-checked={checked}
         onClick={() => onChange(!checked)}
         className={[
-          'relative self-start h-7 w-12 flex-none rounded-full border',
+          'relative self-center h-7 w-12 flex-none rounded-full border overflow-hidden',
           checked
             ? 'border-[rgba(var(--c-primary),0.55)] bg-[rgba(var(--c-primary),0.75)]'
             : 'border-[rgba(var(--c-border),0.85)] bg-[rgba(var(--c-surface),0.90)]',
@@ -649,12 +753,10 @@ function ToggleSwitch({
       >
         <span className="sr-only">{checked ? 'Desativar' : 'Ativar'} {label}</span>
         <span
-          className={[
-            'absolute top-0.5 h-6 w-6 rounded-full bg-white shadow-[0_6px_18px_rgba(0,0,0,0.25)] transition-transform will-change-transform',
-            checked ? 'translate-x-5' : 'translate-x-0.5',
-          ].join(' ')}
-        />
-      </button>
+  className="absolute top-0.5 h-6 w-6 rounded-full bg-white shadow-[0_6px_18px_rgba(0,0,0,0.25)] transition-[left] duration-200"
+  style={{ left: checked ? 'calc(100% - 1.5rem - 0.125rem)' : '0.125rem', willChange: 'left' }}
+/>
+</button>
     </div>
   )
 }
@@ -866,24 +968,45 @@ function HeadingIndex({
   const [items, setItems] = useState<HeadingItem[]>([])
 
   useEffect(() => {
-    if (!enabled) return
-    const update = () => setItems(collectHeadings())
-    update()
+  if (!enabled) return
 
-    const obs = new MutationObserver(() => update())
-    obs.observe(document.getElementById('root') || document.body, { subtree: true, childList: true })
-    return () => obs.disconnect()
-  }, [enabled])
+  let raf = 0
+  const update = () => {
+    window.cancelAnimationFrame(raf)
+    raf = window.requestAnimationFrame(() => {
+      setItems(collectHeadings())
+    })
+  }
+  update()
+
+  const obs = new MutationObserver(() => update())
+  obs.observe(document.getElementById('root') || document.body, { subtree: true, childList: true })
+
+  return () => {
+    obs.disconnect()
+    window.cancelAnimationFrame(raf)
+  }
+}, [enabled])
 
   if (!enabled) return null
-  if (!items.length) return null
+
+  if (!items.length) {
+    return (
+      <div className="mt-3 rounded-2xl border border-[rgba(var(--c-border),0.80)] bg-[rgba(var(--c-surface),0.78)] p-3">
+        <p className="text-xs font-extrabold tracking-wide text-[rgb(var(--c-text))]">Índice da página</p>
+        <p className="mt-1 text-[10px] font-semibold text-[rgba(var(--c-text),0.70)]">
+          Não encontrei títulos nesta tela. Dica: use a ferramenta <span className="font-semibold">Atalhos</span> ou navegue com <span className="font-semibold">Tab</span>.
+        </p>
+      </div>
+    )
+  }
 
   return (
     <div className="mt-3 rounded-2xl border border-[rgba(var(--c-border),0.80)] bg-[rgba(var(--c-surface),0.78)] p-3">
       <p className="text-xs font-extrabold tracking-wide text-[rgb(var(--c-text))]">Índice da página</p>
       <p className="mt-1 text-[10px] font-semibold text-[rgba(var(--c-text),0.70)]">Use para pular rapidamente entre seções.</p>
 
-      <div className="mt-2 max-h-40 overflow-auto pr-1">
+      <div className="mt-2 max-h-44 overflow-auto pr-1 overscroll-contain">
         <ul className="space-y-1">
           {items.map((it) => (
             <li key={it.id}>
@@ -947,28 +1070,43 @@ function KeyboardMenu({
   }, [enabled])
 
   useEffect(() => {
-    if (!enabled) return
+  if (!enabled) return
 
-    const onKey = (ev: KeyboardEvent) => {
-      const t = ev.target as HTMLElement | null
-      const typing =
-        t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || (t as any).isContentEditable)
-      if (typing) return
+  const extractDigit = (ev: KeyboardEvent): string | null => {
+    const c = ev.code || ''
+    if (/^Digit[1-9]$/.test(c)) return c.replace('Digit', '')
+    if (/^Numpad[1-9]$/.test(c)) return c.replace('Numpad', '')
+    if (/^[1-9]$/.test(ev.key)) return ev.key
+    const sup: Record<string, string> = { '¹': '1', '²': '2', '³': '3', '⁴': '4', '⁵': '5', '⁶': '6', '⁷': '7', '⁸': '8', '⁹': '9' }
+    return sup[ev.key] || null
+  }
 
-      // Alt + número para pular (evita disparos acidentais enquanto digita)
-      if (!ev.altKey) return
-      const key = ev.key
-      if (!/^[1-9]$/.test(key)) return
+  const onKey = (ev: KeyboardEvent) => {
+    const t = ev.target as HTMLElement | null
+    const typing =
+      t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || (t as any).isContentEditable)
 
-      const target = targets.find((x) => x.key === key)
-      if (!target) return
-      ev.preventDefault()
-      onJump(target.id)
-    }
+    const altGraph = (ev as any).getModifierState?.('AltGraph') ?? false
+    if (!ev.altKey && !altGraph) return
 
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [enabled, targets, onJump])
+    const digit = extractDigit(ev)
+    if (!digit) return
+
+    // Se estiver digitando e for AltGraph/Ctrl+Alt (ex: @, caracteres especiais), não intercepta.
+    if (typing && (altGraph || ev.ctrlKey)) return
+
+    const target = targets.find((x) => x.key === digit)
+    if (!target) return
+
+    ev.preventDefault()
+    ev.stopPropagation()
+    onJump(target.id)
+  }
+
+  // capture=true para funcionar mesmo quando algum componente intercepta keydown
+  window.addEventListener('keydown', onKey, true)
+  return () => window.removeEventListener('keydown', onKey, true)
+}, [enabled, targets, onJump])
 
   if (!enabled) return null
   if (!targets.length) return null
@@ -1006,9 +1144,25 @@ export function AccessibilityDock() {
   const [dockOpen, setDockOpen] = useState(() => loadDockOpen())
   const [tab, setTab] = useState<'texto' | 'cores' | 'navegacao' | 'som'>('cores')
 
+  const [portalEl, setPortalEl] = useState<HTMLElement | null>(null)
+
+  // Porta os overlays no <body> para evitar problemas com filtros CSS (ex: daltonismo/mono) afetando elementos fixed
+  useEffect(() => {
+    if (typeof document === 'undefined') return
+    let el = document.getElementById('participa-a11y-portal') as HTMLElement | null
+    if (!el) {
+      el = document.createElement('div')
+      el.id = 'participa-a11y-portal'
+      document.body.appendChild(el)
+    }
+    setPortalEl(el)
+  }, [])
+
+
   const dockRef = useRef<HTMLElement | null>(null)
   const lastFocusRef = useRef<HTMLElement | null>(null)
   const preClickActiveRef = useRef<HTMLElement | null>(null)
+  const adhdMaskOwnedRef = useRef<boolean>(false)
 
   const [isReading, setIsReading] = useState(false)
   const [ttsHint, setTtsHint] = useState<string | null>(null)
@@ -1079,6 +1233,7 @@ export function AccessibilityDock() {
     root.classList.toggle('a11y-reduce-motion', reduce)
     root.classList.toggle('a11y-mono', p.mono)
     root.classList.toggle('a11y-adhd', p.readingMask || p.profileAdhd)
+    root.classList.toggle('a11y-mute', p.muteSite)
 
     // Cursor halo (não mexe no cursor do sistema: adiciona “aura” visível)
     root.classList.toggle('a11y-cursor-halo', p.cursor !== 'default' || p.profileLowVision)
@@ -1094,20 +1249,72 @@ export function AccessibilityDock() {
   }, [dockOpen])
 
   // Segurança / Som: por padrão, evita autoplay (bom para deficiência auditiva e epilepsia)
+  // + Silenciar sons do site (muta áudio/vídeo e bloqueia TTS quando ativado)
   useEffect(() => {
-    const stopAutoplay = () => {
+    const tagMutedByA11y = (el: HTMLMediaElement) => {
+      try {
+        const ds = (el as any).dataset as DOMStringMap | undefined
+        if (!ds) return
+        if (ds.a11yMuted === '1') return
+        ds.a11yMuted = '1'
+        ds.a11yPrevMuted = el.muted ? '1' : '0'
+        ds.a11yPrevVolume = String(typeof (el as any).volume === 'number' ? (el as any).volume : 1)
+      } catch {
+        // ignore
+      }
+    }
+
+    const restoreMutedByA11y = (el: HTMLMediaElement) => {
+      try {
+        const ds = (el as any).dataset as DOMStringMap | undefined
+        if (!ds) return
+        if (ds.a11yMuted !== '1') return
+
+        const prevMuted = ds.a11yPrevMuted === '1'
+        const prevVol = Number.parseFloat(ds.a11yPrevVolume || '1')
+        // Só restaura quando não há outro motivo para manter mudo
+        if (!prefs.profileDeaf) {
+          el.muted = prevMuted
+          if (!Number.isNaN(prevVol)) el.volume = clamp(prevVol, 0, 1)
+        }
+        delete (ds as any).a11yMuted
+        delete (ds as any).a11yPrevMuted
+        delete (ds as any).a11yPrevVolume
+      } catch {
+        // ignore
+      }
+    }
+
+    const applyMediaRules = () => {
       try {
         const videos = Array.from(document.querySelectorAll('video')) as HTMLVideoElement[]
         const audios = Array.from(document.querySelectorAll('audio')) as HTMLAudioElement[]
 
         for (const v of videos) {
           const isAutoplay = v.autoplay || v.hasAttribute('autoplay')
-          if (prefs.profileEpilepsy || prefs.profileDeaf || isAutoplay) {
+
+          // Epilepsia/segurança: remove autoplay e pausa
+          if (prefs.profileEpilepsy || isAutoplay) {
             v.autoplay = false
             v.removeAttribute('autoplay')
             v.pause?.()
-            if (prefs.profileDeaf) v.muted = true
           }
+
+          // Deficiência auditiva: evita som automático
+          if (prefs.profileDeaf) {
+            v.muted = true
+            v.volume = 0
+          }
+
+          // Silenciar sons do site: muta e guarda estado anterior para restauração
+          if (prefs.muteSite) {
+            tagMutedByA11y(v)
+            v.muted = true
+            v.volume = 0
+          } else {
+            restoreMutedByA11y(v)
+          }
+
           // Se houver track, tenta mostrar legendas
           if (prefs.profileDeaf && v.textTracks) {
             for (const t of Array.from(v.textTracks)) {
@@ -1122,11 +1329,25 @@ export function AccessibilityDock() {
 
         for (const a of audios) {
           const isAutoplay = a.autoplay || a.hasAttribute('autoplay')
-          if (prefs.profileDeaf || isAutoplay) {
+
+          // Evita autoplay
+          if (isAutoplay) {
             a.autoplay = false
             a.removeAttribute('autoplay')
             a.pause?.()
+          }
+
+          if (prefs.profileDeaf) {
             a.muted = true
+            a.volume = 0
+          }
+
+          if (prefs.muteSite) {
+            tagMutedByA11y(a)
+            a.muted = true
+            a.volume = 0
+          } else {
+            restoreMutedByA11y(a)
           }
         }
       } catch {
@@ -1134,14 +1355,84 @@ export function AccessibilityDock() {
       }
     }
 
-    stopAutoplay()
+    applyMediaRules()
 
-    const obs = new MutationObserver(() => stopAutoplay())
+    // Se novos elementos <audio>/<video> aparecerem, aplica as mesmas regras.
+    const obs = new MutationObserver(() => applyMediaRules())
     obs.observe(document.body, { childList: true, subtree: true })
-    return () => obs.disconnect()
-  }, [prefs.profileDeaf, prefs.profileEpilepsy])
 
-  // ====== TTS: lê o elemento em foco (TAB) ======
+    // Se algum áudio/vídeo tentar tocar enquanto o site está silenciado, garante mudo.
+    const onPlay = (ev: Event) => {
+      if (!prefs.muteSite) return
+      const t = ev.target as any
+      const el = (t && (t.tagName === 'AUDIO' || t.tagName === 'VIDEO')) ? (t as HTMLMediaElement) : null
+      if (!el) return
+      tagMutedByA11y(el)
+      el.muted = true
+      try {
+        ;(el as any).volume = 0
+      } catch {
+        // ignore
+      }
+    }
+    document.addEventListener('play', onPlay, true)
+
+    return () => {
+      obs.disconnect()
+      document.removeEventListener('play', onPlay, true)
+    }
+  }, [prefs.profileDeaf, prefs.profileEpilepsy, prefs.muteSite])
+
+  
+  // Silenciar sons: além de áudio/vídeo, também bloqueia TTS (SpeechSynthesis) quando ativado.
+  // Isso evita que outras partes do app “falem” enquanto o usuário estiver no modo silencioso.
+  const originalSpeakRef = useRef<((utterance: SpeechSynthesisUtterance) => void) | null>(null)
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (!('speechSynthesis' in window)) return
+
+    const synthAny = window.speechSynthesis as any
+
+    if (!originalSpeakRef.current) {
+      try {
+        originalSpeakRef.current = synthAny.speak?.bind(window.speechSynthesis)
+      } catch {
+        originalSpeakRef.current = synthAny.speak
+      }
+    }
+
+    if (prefs.muteSite) {
+      try {
+        window.speechSynthesis.cancel()
+      } catch {
+        // ignore
+      }
+      try {
+        synthAny.speak = () => {}
+      } catch {
+        // ignore
+      }
+    } else if (originalSpeakRef.current) {
+      try {
+        synthAny.speak = originalSpeakRef.current
+      } catch {
+        // ignore
+      }
+    }
+
+    return () => {
+      if (originalSpeakRef.current) {
+        try {
+          synthAny.speak = originalSpeakRef.current
+        } catch {
+          // ignore
+        }
+      }
+    }
+  }, [prefs.muteSite])
+
+// ====== Leitor de texto (ao passar o mouse) ======
   const pickPtVoice = useCallback(() => {
     try {
       const voices = window.speechSynthesis.getVoices()
@@ -1161,70 +1452,162 @@ export function AccessibilityDock() {
     setIsReading(false)
   }, [])
 
-  const onReadMouseDown = useCallback((e: ReactMouseEvent<HTMLButtonElement>) => {
-    // evita roubar o foco do campo que o usuário tabulou
-    preClickActiveRef.current = document.activeElement as HTMLElement | null
-    e.preventDefault()
-  }, [])
+  // Se o modo silencioso for ativado, interrompe qualquer fala em andamento
+  useEffect(() => {
+    if (prefs.muteSite) stopReading()
+  }, [prefs.muteSite, stopReading])
 
-  const readFocused = useCallback(() => {
-    setTtsHint(null)
+  const speakText = useCallback(
+    (raw: string) => {
+      if (!canSpeak) return
+      if (prefs.muteSite) {
+        setIsReading(false)
+        return
+      }
 
+      const text = sanitizeForTts(raw)
+      if (!text) return
+
+      try {
+        window.speechSynthesis.cancel()
+
+        const voice = pickPtVoice()
+        const utter = new SpeechSynthesisUtterance(text)
+        utter.lang = voice?.lang || 'pt-BR'
+        if (voice) utter.voice = voice
+        utter.rate = 1
+        utter.pitch = 1
+
+        utter.onend = () => setIsReading(false)
+        utter.onerror = () => {
+          setIsReading(false)
+          setTtsHint('Não consegui reproduzir áudio. Verifique se o som do dispositivo/navegador está ativo.')
+        }
+
+        setIsReading(true)
+        window.speechSynthesis.speak(utter)
+      } catch {
+        setIsReading(false)
+        setTtsHint('Não consegui iniciar a leitura. Tente novamente.')
+      }
+    },
+    [canSpeak, pickPtVoice, prefs.muteSite],
+  )
+
+  const hoverTimerRef = useRef<number | null>(null)
+  const lastHoverKeyRef = useRef<string>('')
+
+  useEffect(() => {
+    // Desativado
+    if (!prefs.hoverReader) {
+      setTtsHint(null)
+      if (hoverTimerRef.current) {
+        window.clearTimeout(hoverTimerRef.current)
+        hoverTimerRef.current = null
+      }
+      return
+    }
+
+    // Sem suporte
     if (!canSpeak) {
       setTtsHint('Seu navegador não suporta leitura em voz alta.')
       return
     }
 
-    if (isReading) {
-      stopReading()
+    // Silenciado
+    if (prefs.muteSite) {
+      setTtsHint('O site está no modo silencioso. Desative “Silenciar sons” para usar o leitor de texto.')
       return
     }
 
-    const dockEl = dockRef.current
-    const candidate = preClickActiveRef.current || lastFocusRef.current || (document.activeElement as HTMLElement | null)
+    setTtsHint('Ativo: passe o mouse sobre um texto, botão ou campo para ouvir.')
 
-    // Se clicou no botão, o activeElement pode virar o próprio botão. Preferimos o lastFocus.
-    const target = candidate && dockEl && dockEl.contains(candidate) ? lastFocusRef.current : candidate
+    const shouldIgnore = (el: HTMLElement) => {
+      if (dockRef.current && dockRef.current.contains(el)) return true
+      if (el.closest('div[vw].enabled, [vw-access-button], [vw-plugin-wrapper]')) return true
 
-    if (!target || (dockEl && dockEl.contains(target))) {
-      setTtsHint('Use Tab para focar um campo e clique novamente em “Ler em voz alta”.')
-      return
+      // Evita ler o próprio menu flutuante/overlays e o chat da IZA
+      if (el.closest('[data-a11y-overlay="true"]')) return true
+      if (el.closest('[data-iza-chat], [data-iza-chat-widget], #iza-chat, #iza-chat-widget')) return true
+
+      return false
     }
 
-    if (target.closest('div[vw].enabled, [vw-access-button], [vw-plugin-wrapper]')) {
-      setTtsHint('Foque um campo do formulário ou um botão do site para ouvir.')
-      return
-    }
+    const findReadable = (start: HTMLElement | null): HTMLElement | null => {
+      let el: HTMLElement | null = start
+      for (let i = 0; i < 6 && el; i += 1) {
+        if (shouldIgnore(el)) return null
 
-    const text = sanitizeForTts(describeElementForTts(target))
-    if (!text) {
-      setTtsHint('Não encontrei texto para ler no item em foco.')
-      return
-    }
+        const tag = el.tagName.toLowerCase()
 
-    try {
-      window.speechSynthesis.cancel()
+        // ignora elementos puramente visuais
+        if (tag === 'svg' || tag === 'path' || tag === 'g') {
+          el = el.parentElement
+          continue
+        }
 
-      const voice = pickPtVoice()
-      const utter = new SpeechSynthesisUtterance(text)
-      utter.lang = voice?.lang || 'pt-BR'
-      if (voice) utter.voice = voice
-      utter.rate = 1
-      utter.pitch = 1
+        if (tag === 'input' || tag === 'textarea' || tag === 'select' || tag === 'button' || tag === 'a' || tag === 'label') {
+          return el
+        }
 
-      utter.onend = () => setIsReading(false)
-      utter.onerror = () => {
-        setIsReading(false)
-        setTtsHint('Não consegui reproduzir áudio. Verifique se o som do dispositivo/navegador está ativo.')
+        if (tag === 'h1' || tag === 'h2' || tag === 'h3' || tag === 'h4' || tag === 'h5' || tag === 'h6' || tag === 'p' || tag === 'li') {
+          return el
+        }
+
+        const aria = sanitizeForTts(el.getAttribute('aria-label') || '')
+        const txt = aria || sanitizeForTts(el.textContent || '')
+        if (txt.length >= 12) return el
+
+        el = el.parentElement
       }
-
-      setIsReading(true)
-      window.speechSynthesis.speak(utter)
-    } catch {
-      setIsReading(false)
-      setTtsHint('Não consegui iniciar a leitura. Tente novamente.')
+      return null
     }
-  }, [canSpeak, isReading, pickPtVoice, stopReading])
+
+    const textFor = (el: HTMLElement) => {
+      const tag = el.tagName.toLowerCase()
+      const isControl = tag === 'input' || tag === 'textarea' || tag === 'select' || tag === 'button' || tag === 'a' || tag === 'label'
+      const raw = isControl ? describeElementForTts(el) : el.getAttribute('aria-label') || el.textContent || ''
+      const txt = sanitizeForTts(raw)
+      if (!txt) return ''
+
+      if (txt.length > 320) return `${txt.slice(0, 280)}…`
+      return txt
+    }
+
+    const scheduleSpeak = (el: HTMLElement) => {
+      const txt = textFor(el)
+      if (!txt || txt.length < 2) return
+
+      const key = `${el.tagName}|${el.id || ''}|${txt}`
+      if (key === lastHoverKeyRef.current) return
+
+      lastHoverKeyRef.current = key
+
+      if (hoverTimerRef.current) window.clearTimeout(hoverTimerRef.current)
+      hoverTimerRef.current = window.setTimeout(() => {
+        speakText(txt)
+      }, 220)
+    }
+
+    const onOver = (ev: Event) => {
+      const t = ev.target as HTMLElement | null
+      if (!t) return
+      const el = findReadable(t)
+      if (!el) return
+      scheduleSpeak(el)
+    }
+
+    document.addEventListener('mouseover', onOver, true)
+
+    return () => {
+      document.removeEventListener('mouseover', onOver, true)
+      if (hoverTimerRef.current) {
+        window.clearTimeout(hoverTimerRef.current)
+        hoverTimerRef.current = null
+      }
+    }
+  }, [prefs.hoverReader, prefs.muteSite, canSpeak, speakText])
+
 
   // ====== VLibras ======
   const toggleVlibras = useCallback(async () => {
@@ -1299,9 +1682,9 @@ export function AccessibilityDock() {
     setPrefs((p) => ({ ...p, readingMask: !p.readingMask }))
   }, [])
 
+
   // ====== Perfis ======
   const toggleLowVision = useCallback((next: boolean) => {
-    setDockOpen(false)
     setPrefs((p) => {
       if (next) {
         lowVisionPrevRef.current = { fontScale: p.fontScale, highContrast: p.highContrast, cursor: p.cursor, cursorThick: p.cursorThick }
@@ -1329,7 +1712,6 @@ export function AccessibilityDock() {
   }, [])
 
   const toggleEpilepsyProfile = useCallback((next: boolean) => {
-    setDockOpen(false)
     setPrefs((p) => {
       if (next) {
         epilepsyPrevRef.current = { reduceMotion: p.reduceMotion }
@@ -1342,9 +1724,20 @@ export function AccessibilityDock() {
   }, [])
 
   const toggleAdhdProfile = useCallback((next: boolean) => {
-    setDockOpen(false)
-    setPrefs((p) => ({ ...p, profileAdhd: next, readingMask: next ? true : p.readingMask }))
-  }, [])
+  setPrefs((p) => {
+    if (next) {
+      // Se a máscara ainda não estava ativa, marcamos que foi o perfil que a ligou,
+      // para conseguirmos desfazer ao desativar o perfil.
+      if (!p.readingMask) adhdMaskOwnedRef.current = true
+      return { ...p, profileAdhd: true, readingMask: true }
+    }
+
+    // Ao desativar o perfil, desfaz a máscara somente se foi habilitada pelo próprio perfil.
+    const shouldDisableMask = adhdMaskOwnedRef.current
+    adhdMaskOwnedRef.current = false
+    return { ...p, profileAdhd: false, readingMask: shouldDisableMask ? false : p.readingMask }
+  })
+}, [])
 
   const reset = useCallback(() => {
     setPrefs(defaultPrefs())
@@ -1378,401 +1771,402 @@ export function AccessibilityDock() {
   const haloThick = prefs.cursorThick || prefs.profileLowVision
 
   // ====== UI ======
-  if (!dockOpen) {
-    return (
-      <>
-        <CursorHalo enabled={haloEnabled} color={haloColor} thick={haloThick} />
-        <ReadingMask enabled={prefs.readingMask || prefs.profileAdhd} />
-        <KeyboardMenu enabled={prefs.keyboardMenu} onJump={onJump} />
-
-        <aside className="fixed bottom-4 left-4 z-[70] flex flex-col gap-2" aria-label="Ferramentas de acessibilidade">
-          <button
-            type="button"
-            onClick={toggleVlibras}
-            className="glass inline-flex h-12 w-12 items-center justify-center rounded-2xl border border-[rgba(var(--c-border),0.80)] bg-[rgba(var(--c-surface),0.88)] shadow-[var(--shadow-elev-2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(var(--c-primary),0.40)]"
-            aria-label="Traduzir para Libras"
-            title="Libras"
-          >
-            <Hand className="h-5 w-5 text-[rgb(var(--c-primary))]" aria-hidden="true" />
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setDockOpen(true)}
-            className="glass inline-flex h-12 w-12 items-center justify-center rounded-2xl border border-[rgba(var(--c-border),0.80)] bg-[rgba(var(--c-surface),0.88)] shadow-[var(--shadow-elev-2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(var(--c-primary),0.40)]"
-            aria-label="Abrir ferramentas de acessibilidade"
-            title="Acessibilidade"
-          >
-            <Accessibility className="h-5 w-5 text-[rgb(var(--c-primary))]" aria-hidden="true" />
-          </button>
-        </aside>
-      </>
-    )
-  }
-
-  return (
+  // Conteúdo renderizado (em portal) — mantém elementos fixed estáveis mesmo com filtros CSS no app (ex: daltonismo/mono)
+  const overlay = (
     <>
       <CursorHalo enabled={haloEnabled} color={haloColor} thick={haloThick} />
       <ReadingMask enabled={prefs.readingMask || prefs.profileAdhd} />
       <KeyboardMenu enabled={prefs.keyboardMenu} onJump={onJump} />
 
-      <aside
-        ref={dockRef as any}
-        className="fixed bottom-4 left-4 z-[70] w-[min(760px,calc(100vw-2rem))] max-w-[calc(100vw-2rem)] max-h-[85vh]"
-        aria-label="Ferramentas de acessibilidade"
-      >
-        <div className="glass p-3 max-h-[85vh] overflow-auto">
-          <div className="flex flex-wrap items-center justify-between gap-2 px-1 pb-2">
-            <div className="min-w-0">
-              <p className="text-xs font-extrabold tracking-wide text-[rgb(var(--c-text))]">Acessibilidade</p>
-              <p className="text-[10px] font-semibold text-[rgba(var(--c-text),0.70)]">WCAG 2.1 AA • Perfis e ferramentas</p>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={reset}
-                className="inline-flex items-center gap-2 rounded-xl border border-[rgba(var(--c-border),0.75)] bg-[rgba(var(--c-surface),0.90)] px-3 py-2 text-xs font-bold text-[rgba(var(--c-text),0.88)] hover:bg-[rgba(var(--c-border),0.22)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(var(--c-primary),0.40)]"
-              >
-                <RotateCcw className="h-4 w-4" aria-hidden="true" />
-                Restaurar
-              </button>
-
-              <button
-                type="button"
-                className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[rgba(var(--c-border),0.75)] bg-[rgba(var(--c-surface),0.90)] text-[rgba(var(--c-text),0.85)] hover:bg-[rgba(var(--c-border),0.22)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(var(--c-primary),0.40)]"
-                onClick={() => setDockOpen(false)}
-                aria-label="Fechar ferramentas de acessibilidade"
-                title="Fechar"
-              >
-                <X className="h-4 w-4" aria-hidden="true" />
-              </button>
-            </div>
-          </div>
-
-          <div className="grid gap-3 md:grid-cols-[1fr,1.15fr]">
-            {/* COLUNA ESQUERDA — PERFIS */}
-            <section className="rounded-3xl border border-[rgba(var(--c-border),0.80)] bg-[rgba(var(--c-surface),0.62)] p-3">
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-xs font-extrabold tracking-wide text-[rgb(var(--c-text))]">Perfis</p>
-                <p className="text-[10px] font-semibold text-[rgba(var(--c-text),0.70)]">Ative conforme sua necessidade</p>
-              </div>
-
-              <div className="mt-2 space-y-2">
-                <ToggleSwitch
-                  checked={prefs.profileLowVision}
-                  onChange={toggleLowVision}
-                  label="Baixa visão"
-                  description="Aumenta contraste, amplia texto (200%) e reforça o cursor para facilitar a leitura."
-                  icon={<Eye className="h-4 w-4" aria-hidden="true" />}
-                />
-
-                <ToggleSwitch
-                  checked={prefs.profileMotor}
-                  onChange={(next) => { setDockOpen(false); setPrefs((p) => ({ ...p, profileMotor: next })) }}
-                  label="Habilidades motoras"
-                  description="Foco no teclado: anel de foco reforçado e alvos interativos maiores."
-                  icon={<Keyboard className="h-4 w-4" aria-hidden="true" />}
-                />
-
-                <ToggleSwitch
-                  checked={prefs.profileDaltonism}
-                  onChange={(next) => { setDockOpen(false); setPrefs((p) => ({ ...p, profileDaltonism: next })) }}
-                  label="Daltonismo"
-                  description="Reduz saturação e aumenta contraste. Prefira ícones e texto, não só cor."
-                  icon={<Palette className="h-4 w-4" aria-hidden="true" />}
-                />
-
-                <ToggleSwitch
-                  checked={prefs.profileEpilepsy}
-                  onChange={toggleEpilepsyProfile}
-                  label="Epilepsia / sensibilidade"
-                  description="Reduz movimentos e pausa autoplay para diminuir estímulos visuais."
-                  icon={<Activity className="h-4 w-4" aria-hidden="true" />}
-                />
-
-                <ToggleSwitch
-                  checked={prefs.profileAdhd}
-                  onChange={toggleAdhdProfile}
-                  label="TDAH"
-                  description="Ativa máscara de leitura para reduzir distrações periféricas."
-                  icon={<Target className="h-4 w-4" aria-hidden="true" />}
-                />
-
-                <ToggleSwitch
-                  checked={prefs.profileDyslexia}
-                  onChange={(next) => { setDockOpen(false); setPrefs((p) => ({ ...p, profileDyslexia: next })) }}
-                  label="Dislexia"
-                  description="Fonte amigável, espaçamento ampliado e linha mais confortável."
-                  icon={<BookOpenText className="h-4 w-4" aria-hidden="true" />}
-                />
-
-                <ToggleSwitch
-                  checked={prefs.profileDeaf}
-                  onChange={(next) => { setDockOpen(false); setPrefs((p) => ({ ...p, profileDeaf: next })) }}
-                  label="Deficiência auditiva"
-                  description="Evita sons automáticos e tenta ativar legendas em vídeos quando existirem."
-                  icon={<EarOff className="h-4 w-4" aria-hidden="true" />}
-                />
-              </div>
-
-              {/* Libras */}
-              <div className="mt-3 rounded-2xl border border-[rgba(var(--c-border),0.80)] bg-[rgba(var(--c-surface),0.78)] p-3">
-                <button
-                  type="button"
-                  onClick={toggleVlibras}
-                  className="flex w-full items-center justify-between gap-3 rounded-xl border border-[rgba(var(--c-border),0.75)] bg-[rgba(var(--c-surface),0.90)] px-3 py-2 text-left hover:bg-[rgba(var(--c-border),0.22)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(var(--c-primary),0.40)]"
-                  aria-label="Abrir tradutor em Libras"
-                >
-                  <span className="flex items-center gap-2">
-                    <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-[rgba(var(--c-primary),0.10)] text-[rgb(var(--c-primary))]">
-                      <Hand className="h-4 w-4" aria-hidden="true" />
-                    </span>
-                    <span className="min-w-0">
-                      <span className="block text-xs font-extrabold tracking-wide text-[rgb(var(--c-text))]">Libras</span>
-                      <span className="block text-[10px] font-semibold text-[rgba(var(--c-text),0.70)]">
-                        {vlibrasLoading ? 'Carregando…' : 'Ativar tradutor em Libras'}
-                      </span>
-                    </span>
-                  </span>
-
-                  <span className="text-xs font-bold text-[rgb(var(--c-primary))]">{vlibrasLoading ? '…' : 'Abrir'}</span>
-                </button>
-
-                {vlibrasHint && (
-                  <p className="mt-2 text-xs leading-relaxed text-[rgba(var(--c-text),0.75)]" role="status">
-                    {vlibrasHint}
-                  </p>
-                )}
-              </div>
-            </section>
-
-            {/* COLUNA DIREITA — FERRAMENTAS */}
-            <section className="rounded-3xl border border-[rgba(var(--c-border),0.80)] bg-[rgba(var(--c-surface),0.62)] p-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="text-xs font-extrabold tracking-wide text-[rgb(var(--c-text))]">Ferramentas</p>
-
-                <div className="flex items-center gap-1 rounded-2xl border border-[rgba(var(--c-border),0.75)] bg-[rgba(var(--c-surface),0.92)] p-1">
-                  {(
-                    [
-                      { id: 'texto', label: 'Texto', icon: <Type className="h-4 w-4" aria-hidden="true" /> },
-                      { id: 'cores', label: 'Cores', icon: <Palette className="h-4 w-4" aria-hidden="true" /> },
-                      { id: 'navegacao', label: 'Navegação', icon: <Keyboard className="h-4 w-4" aria-hidden="true" /> },
-                      { id: 'som', label: 'Som', icon: <Volume2 className="h-4 w-4" aria-hidden="true" /> },
-                    ] as const
-                  ).map((t) => (
-                    <button
-                      key={t.id}
-                      type="button"
-                      onClick={() => setTab(t.id)}
-                      className={[
-                        'inline-flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-extrabold tracking-wide',
-                        tab === t.id ? 'bg-[rgba(var(--c-primary),0.14)] text-[rgb(var(--c-primary))]' : 'text-[rgba(var(--c-text),0.75)] hover:bg-[rgba(var(--c-border),0.18)]',
-                      ].join(' ')}
-                      aria-current={tab === t.id ? 'page' : undefined}
-                    >
-                      {t.icon}
-                      {t.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Conteúdo da aba */}
-              {tab === 'texto' && (
-                <div className="mt-3">
-                  <div className="grid grid-cols-2 gap-2">
-                    <ToolCard
-                      onClick={increaseFont}
-                      label="Aumentar"
-                      icon={<Plus className="h-5 w-5" aria-hidden="true" />}
-                      description="A+"
-                    />
-                    <ToolCard
-                      onClick={decreaseFont}
-                      label="Diminuir"
-                      icon={<Minus className="h-5 w-5" aria-hidden="true" />}
-                      description="A-"
-                    />
-                  </div>
-
-                  <div className="mt-2 grid grid-cols-2 gap-2">
-                    <ToolCard
-                      active={prefs.lineHeight === 'normal'}
-                      onClick={() => setLineHeight('normal')}
-                      label="Padrão"
-                      icon={<Type className="h-5 w-5" aria-hidden="true" />}
-                      description="Linha normal"
-                    />
-                    <ToolCard
-                      active={prefs.lineHeight === 'relaxed'}
-                      onClick={() => setLineHeight('relaxed')}
-                      label="Espaçado"
-                      icon={<Type className="h-5 w-5" aria-hidden="true" />}
-                      description="Linha maior"
-                    />
-                    <ToolCard
-                      active={prefs.lineHeight === 'extra'}
-                      onClick={() => setLineHeight('extra')}
-                      label="Extra"
-                      icon={<Type className="h-5 w-5" aria-hidden="true" />}
-                      description="Para leitura"
-                    />
-                    <ToolCard
-                      active={prefs.fontScale >= 1.9}
-                      onClick={() => { setPrefs((p) => ({ ...p, fontScale: 2 })); setDockOpen(false) }}
-                      label="Zoom 200%"
-                      icon={<Eye className="h-5 w-5" aria-hidden="true" />}
-                      description="Sem quebrar"
-                    />
-                  </div>
-
-                  <p className="mt-3 text-xs leading-relaxed text-[rgba(var(--c-text),0.72)]">
-                    Dica: o zoom funciona ajustando <span className="font-semibold">rem</span>. Se necessário, o modo{' '}
-                    <span className="font-semibold">Baixa visão</span> também reorganiza o layout em 1 coluna.
-                  </p>
-                </div>
-              )}
-
-              {tab === 'cores' && (
-                <div className="mt-3">
-                  <div className="grid grid-cols-2 gap-2">
-                    <ToolCard
-                      active={prefs.theme === 'light'}
-                      onClick={() => setTheme('light')}
-                      label="Claro"
-                      icon={<Sun className="h-5 w-5" aria-hidden="true" />}
-                      description="Mais brilho"
-                    />
-                    <ToolCard
-                      active={prefs.theme === 'dark'}
-                      onClick={() => setTheme('dark')}
-                      label="Escuro"
-                      icon={<Moon className="h-5 w-5" aria-hidden="true" />}
-                      description="Menos fadiga"
-                    />
-                    <ToolCard
-                      active={prefs.highContrast || prefs.profileLowVision}
-                      onClick={toggleContrast}
-                      label="Alto contraste"
-                      icon={prefs.highContrast || prefs.profileLowVision ? <EyeOff className="h-5 w-5" aria-hidden="true" /> : <Eye className="h-5 w-5" aria-hidden="true" />}
-                      description="Legibilidade"
-                    />
-                    <ToolCard
-                      active={prefs.mono}
-                      onClick={toggleMono}
-                      label="Monocromático"
-                      icon={<Palette className="h-5 w-5" aria-hidden="true" />}
-                      description="Sem cores"
-                    />
-                  </div>
-
-                  <p className="mt-3 text-xs leading-relaxed text-[rgba(var(--c-text),0.72)]">
-                    O modo <span className="font-semibold">Alto contraste</span> força contraste em textos e botões para corrigir trechos que ficam apagados.
-                  </p>
-                </div>
-              )}
-
-              {tab === 'navegacao' && (
-                <div className="mt-3">
-                  <div className="grid grid-cols-2 gap-2">
-                    <ToolCard
-                      active={prefs.keyboardMenu}
-                      onClick={toggleKeyboardMenu}
-                      label="Atalhos"
-                      icon={<Keyboard className="h-5 w-5" aria-hidden="true" />}
-                      description="Alt + 1…9"
-                    />
-                    <ToolCard
-                      active={prefs.smartNav}
-                      onClick={toggleSmartNav}
-                      label="Índice"
-                      icon={<BookOpenText className="h-5 w-5" aria-hidden="true" />}
-                      description="Cabeçalhos"
-                    />
-                    <ToolCard
-                      active={prefs.cursor === 'black'}
-                      onClick={() => setCursor(prefs.cursor === 'black' ? 'default' : 'black')}
-                      label="Cursor preto"
-                      icon={<Target className="h-5 w-5" aria-hidden="true" />}
-                      description="Aumenta visibilidade"
-                    />
-                    <ToolCard
-                      active={prefs.cursor === 'white'}
-                      onClick={() => setCursor(prefs.cursor === 'white' ? 'default' : 'white')}
-                      label="Cursor branco"
-                      icon={<Target className="h-5 w-5" aria-hidden="true" />}
-                      description="Aumenta visibilidade"
-                    />
-                  </div>
-
-                  <div className="mt-2">
-                    <ToggleSwitch
-                      checked={prefs.cursorThick}
-                      onChange={() => toggleCursorThick()}
-                      label="Cursor reforçado"
-                      description="Aumenta o tamanho e a espessura do realce do cursor."
-                      icon={<Target className="h-4 w-4" aria-hidden="true" />}
-                    />
-                  </div>
-
-                  <HeadingIndex enabled={prefs.smartNav} onJump={onJump} />
-
-                  <p className="mt-3 text-xs leading-relaxed text-[rgba(var(--c-text),0.72)]">
-                    Dica: para navegação sem mouse, use <span className="font-semibold">Tab</span> e{' '}
-                    <span className="font-semibold">Shift+Tab</span>. O anel de foco fica mais forte no perfil motor.
-                  </p>
-                </div>
-              )}
-
-              {tab === 'som' && (
-                <div className="mt-3">
-                  <div className="grid grid-cols-2 gap-2">
-                    <ToolCard
-                      active={prefs.reduceMotion || prefs.profileEpilepsy}
-                      onClick={toggleReduceMotion}
-                      label="Reduzir animações"
-                      icon={<Sparkles className="h-5 w-5" aria-hidden="true" />}
-                      description="Menos estímulo"
-                    />
-                    <ToolCard
-                      active={prefs.readingMask || prefs.profileAdhd}
-                      onClick={toggleReadingMask}
-                      label="Máscara leitura"
-                      icon={<Target className="h-5 w-5" aria-hidden="true" />}
-                      description="Concentração"
-                    />
-                  </div>
+      {!dockOpen ? (
+        <aside data-a11y-overlay="true" className="fixed bottom-4 left-4 z-[70] flex flex-col gap-2" aria-label="Ferramentas de acessibilidade">
+                  <button
+                    type="button"
+                    onClick={toggleVlibras}
+                    className="glass inline-flex h-12 w-12 items-center justify-center rounded-2xl border border-[rgba(var(--c-border),0.80)] bg-[rgba(var(--c-surface),0.88)] shadow-[var(--shadow-elev-2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(var(--c-primary),0.40)]"
+                    aria-label="Traduzir para Libras"
+                    title="Libras"
+                  >
+                    <Hand className="h-5 w-5 text-[rgb(var(--c-primary))]" aria-hidden="true" />
+                  </button>
 
                   <button
                     type="button"
-                    onMouseDown={onReadMouseDown}
-                    onClick={readFocused}
-                    className="mt-2 flex w-full min-h-11 items-center justify-center gap-2 rounded-2xl border border-[rgba(var(--c-border),0.75)] bg-[rgba(var(--c-surface),0.90)] px-3 py-3 text-sm font-semibold text-[rgb(var(--c-text))] hover:bg-[rgba(var(--c-border),0.22)] disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(var(--c-primary),0.40)]"
-                    disabled={!canSpeak}
-                    aria-label={isReading ? 'Parar leitura em voz alta' : 'Ler em voz alta o campo em foco'}
+                    onClick={() => setDockOpen(true)}
+                    className="glass inline-flex h-12 w-12 items-center justify-center rounded-2xl border border-[rgba(var(--c-border),0.80)] bg-[rgba(var(--c-surface),0.88)] shadow-[var(--shadow-elev-2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(var(--c-primary),0.40)]"
+                    aria-label="Abrir ferramentas de acessibilidade"
+                    title="Acessibilidade"
                   >
-                    {isReading ? <VolumeX className="h-4 w-4" aria-hidden="true" /> : <Volume2 className="h-4 w-4" aria-hidden="true" />}
-                    <span>{isReading ? 'Parar leitura' : 'Ler em voz alta'}</span>
+                    <Accessibility className="h-5 w-5 text-[rgb(var(--c-primary))]" aria-hidden="true" />
                   </button>
+                </aside>
+      ) : (
+        <aside data-a11y-overlay="true"
+                ref={dockRef as any}
+                className="fixed bottom-4 left-4 z-[70] w-[min(760px,calc(100vw-2rem))] max-w-[calc(100vw-2rem)] max-h-[85vh]"
+                aria-label="Ferramentas de acessibilidade"
+              >
+                <div className="glass p-3 max-h-[85vh] overflow-auto">
+                  <div className="flex flex-wrap items-center justify-between gap-2 px-1 pb-2">
+                    <div className="min-w-0">
+                      <p className="text-xs font-extrabold tracking-wide text-[rgb(var(--c-text))]">Acessibilidade</p>
+                      <p className="text-[10px] font-semibold text-[rgba(var(--c-text),0.70)]">WCAG 2.1 AA • Perfis e ferramentas</p>
+                    </div>
 
-                  {ttsHint && (
-                    <p className="mt-2 text-xs leading-relaxed text-[rgba(var(--c-text),0.78)]" role="status">
-                      {ttsHint}
-                    </p>
-                  )}
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={reset}
+                        className="inline-flex items-center gap-2 rounded-xl border border-[rgba(var(--c-border),0.75)] bg-[rgba(var(--c-surface),0.90)] px-3 py-2 text-xs font-bold text-[rgba(var(--c-text),0.88)] hover:bg-[rgba(var(--c-border),0.22)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(var(--c-primary),0.40)]"
+                      >
+                        <RotateCcw className="h-4 w-4" aria-hidden="true" />
+                        Restaurar
+                      </button>
 
-                  <p className="mt-3 text-xs leading-relaxed text-[rgba(var(--c-text),0.72)]">
-                    A leitura em voz alta sempre prioriza o <span className="font-semibold">item em foco</span>. Use{' '}
-                    <span className="font-semibold">Tab</span> para escolher um campo, depois clique em{' '}
-                    <span className="font-semibold">Ler em voz alta</span>.
-                  </p>
+                      <button
+                        type="button"
+                        className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[rgba(var(--c-border),0.75)] bg-[rgba(var(--c-surface),0.90)] text-[rgba(var(--c-text),0.85)] hover:bg-[rgba(var(--c-border),0.22)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(var(--c-primary),0.40)]"
+                        onClick={() => setDockOpen(false)}
+                        aria-label="Fechar ferramentas de acessibilidade"
+                        title="Fechar"
+                      >
+                        <X className="h-4 w-4" aria-hidden="true" />
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-3 md:grid-cols-[1fr,1.15fr]">
+                    {/* COLUNA ESQUERDA — PERFIS */}
+                    <section className="rounded-3xl border border-[rgba(var(--c-border),0.80)] bg-[rgba(var(--c-surface),0.62)] p-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-xs font-extrabold tracking-wide text-[rgb(var(--c-text))]">Perfis</p>
+                        <p className="text-[10px] font-semibold text-[rgba(var(--c-text),0.70)]">Ative conforme sua necessidade</p>
+                      </div>
+
+                      <div className="mt-2 space-y-2">
+                        <ToggleSwitch
+                          checked={prefs.profileLowVision}
+                          onChange={toggleLowVision}
+                          label="Baixa visão"
+                          description="Aumenta contraste, amplia texto (200%) e reforça o cursor para facilitar a leitura."
+                          icon={<Eye className="h-4 w-4" aria-hidden="true" />}
+                        />
+
+                        <ToggleSwitch
+                          checked={prefs.profileMotor}
+                          onChange={(next) => { setPrefs((p) => ({ ...p, profileMotor: next })) }}
+                          label="Habilidades motoras"
+                          description="Foco no teclado: anel de foco reforçado e alvos interativos maiores."
+                          icon={<Keyboard className="h-4 w-4" aria-hidden="true" />}
+                        />
+
+                        <ToggleSwitch
+                          checked={prefs.profileDaltonism}
+                          onChange={(next) => { setPrefs((p) => ({ ...p, profileDaltonism: next })) }}
+                          label="Daltonismo"
+                          description="Reduz saturação e aumenta contraste. Prefira ícones e texto, não só cor."
+                          icon={<Palette className="h-4 w-4" aria-hidden="true" />}
+                        />
+
+                        <ToggleSwitch
+                          checked={prefs.profileEpilepsy}
+                          onChange={toggleEpilepsyProfile}
+                          label="Epilepsia / sensibilidade"
+                          description="Reduz movimentos e pausa autoplay para diminuir estímulos visuais."
+                          icon={<Activity className="h-4 w-4" aria-hidden="true" />}
+                        />
+
+                        <ToggleSwitch
+                          checked={prefs.profileAdhd}
+                          onChange={toggleAdhdProfile}
+                          label="TDAH"
+                          description="Ativa máscara de leitura para reduzir distrações periféricas."
+                          icon={<Target className="h-4 w-4" aria-hidden="true" />}
+                        />
+
+                        <ToggleSwitch
+                          checked={prefs.profileDyslexia}
+                          onChange={(next) => { setPrefs((p) => ({ ...p, profileDyslexia: next })) }}
+                          label="Dislexia"
+                          description="Fonte amigável, espaçamento ampliado e linha mais confortável."
+                          icon={<BookOpenText className="h-4 w-4" aria-hidden="true" />}
+                        />
+
+                        <ToggleSwitch
+                          checked={prefs.profileDeaf}
+                          onChange={(next) => { setPrefs((p) => ({ ...p, profileDeaf: next })) }}
+                          label="Deficiência auditiva"
+                          description="Evita sons automáticos e tenta ativar legendas em vídeos quando existirem."
+                          icon={<EarOff className="h-4 w-4" aria-hidden="true" />}
+                        />
+                      </div>
+
+                      {/* Libras */}
+                      <div className="mt-3 rounded-2xl border border-[rgba(var(--c-border),0.80)] bg-[rgba(var(--c-surface),0.78)] p-3">
+                        <button
+                          type="button"
+                          onClick={toggleVlibras}
+                          className="flex w-full items-center justify-between gap-3 rounded-xl border border-[rgba(var(--c-border),0.75)] bg-[rgba(var(--c-surface),0.90)] px-3 py-2 text-left hover:bg-[rgba(var(--c-border),0.22)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(var(--c-primary),0.40)]"
+                          aria-label="Abrir tradutor em Libras"
+                        >
+                          <span className="flex items-center gap-2">
+                            <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-[rgba(var(--c-primary),0.10)] text-[rgb(var(--c-primary))]">
+                              <Hand className="h-4 w-4" aria-hidden="true" />
+                            </span>
+                            <span className="min-w-0">
+                              <span className="block text-xs font-extrabold tracking-wide text-[rgb(var(--c-text))]">Libras</span>
+                              <span className="block text-[10px] font-semibold text-[rgba(var(--c-text),0.70)]">
+                                {vlibrasLoading ? 'Carregando…' : 'Ativar tradutor em Libras'}
+                              </span>
+                            </span>
+                          </span>
+
+                          <span className="text-xs font-bold text-[rgb(var(--c-primary))]">{vlibrasLoading ? '…' : 'Abrir'}</span>
+                        </button>
+
+                        {vlibrasHint && (
+                          <p className="mt-2 text-xs leading-relaxed text-[rgba(var(--c-text),0.75)]" role="status">
+                            {vlibrasHint}
+                          </p>
+                        )}
+                      </div>
+                    </section>
+
+                    {/* COLUNA DIREITA — FERRAMENTAS */}
+                    <section className="rounded-3xl border border-[rgba(var(--c-border),0.80)] bg-[rgba(var(--c-surface),0.62)] p-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-xs font-extrabold tracking-wide text-[rgb(var(--c-text))]">Ferramentas</p>
+
+                        <div className="flex items-center gap-1 rounded-2xl border border-[rgba(var(--c-border),0.75)] bg-[rgba(var(--c-surface),0.92)] p-1">
+                          {(
+                            [
+                              { id: 'texto', label: 'Texto', icon: <Type className="h-4 w-4" aria-hidden="true" /> },
+                              { id: 'cores', label: 'Cores', icon: <Palette className="h-4 w-4" aria-hidden="true" /> },
+                              { id: 'navegacao', label: 'Navegação', icon: <Keyboard className="h-4 w-4" aria-hidden="true" /> },
+                              { id: 'som', label: 'Som', icon: <Volume2 className="h-4 w-4" aria-hidden="true" /> },
+                            ] as const
+                          ).map((t) => (
+                            <button
+                              key={t.id}
+                              type="button"
+                              onClick={() => setTab(t.id)}
+                              className={[
+                                'inline-flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-extrabold tracking-wide',
+                                tab === t.id ? 'bg-[rgba(var(--c-primary),0.14)] text-[rgb(var(--c-primary))]' : 'text-[rgba(var(--c-text),0.75)] hover:bg-[rgba(var(--c-border),0.18)]',
+                              ].join(' ')}
+                              aria-current={tab === t.id ? 'page' : undefined}
+                            >
+                              {t.icon}
+                              {t.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Conteúdo da aba */}
+                      {tab === 'texto' && (
+                        <div className="mt-3">
+                          <div className="grid grid-cols-2 gap-2">
+                            <ToolCard
+                              onClick={increaseFont}
+                              label="Aumentar"
+                              icon={<Plus className="h-5 w-5" aria-hidden="true" />}
+                              description="A+"
+                            />
+                            <ToolCard
+                              onClick={decreaseFont}
+                              label="Diminuir"
+                              icon={<Minus className="h-5 w-5" aria-hidden="true" />}
+                              description="A-"
+                            />
+                          </div>
+
+                          <div className="mt-2 grid grid-cols-2 gap-2">
+                            <ToolCard
+                              active={prefs.lineHeight === 'normal'}
+                              onClick={() => setLineHeight('normal')}
+                              label="Padrão"
+                              icon={<Type className="h-5 w-5" aria-hidden="true" />}
+                              description="Linha normal"
+                            />
+                            <ToolCard
+                              active={prefs.lineHeight === 'relaxed'}
+                              onClick={() => setLineHeight('relaxed')}
+                              label="Espaçado"
+                              icon={<Type className="h-5 w-5" aria-hidden="true" />}
+                              description="Linha maior"
+                            />
+                            <ToolCard
+                              active={prefs.lineHeight === 'extra'}
+                              onClick={() => setLineHeight('extra')}
+                              label="Extra"
+                              icon={<Type className="h-5 w-5" aria-hidden="true" />}
+                              description="Para leitura"
+                            />
+                            <ToolCard
+                              active={prefs.fontScale >= 1.9}
+                              onClick={() => { setPrefs((p) => ({ ...p, fontScale: 2 })) }}
+                              label="Zoom 200%"
+                              icon={<Eye className="h-5 w-5" aria-hidden="true" />}
+                              description="Sem quebrar"
+                            />
+                          </div>
+
+                          <p className="mt-3 text-xs leading-relaxed text-[rgba(var(--c-text),0.72)]">
+                            Dica: o zoom funciona ajustando <span className="font-semibold">rem</span>. Se necessário, o modo{' '}
+                            <span className="font-semibold">Baixa visão</span> também reorganiza o layout em 1 coluna.
+                          </p>
+                        </div>
+                      )}
+
+                      {tab === 'cores' && (
+                        <div className="mt-3">
+                          <div className="grid grid-cols-2 gap-2">
+                            <ToolCard
+                              active={prefs.theme === 'light'}
+                              onClick={() => setTheme('light')}
+                              label="Claro"
+                              icon={<Sun className="h-5 w-5" aria-hidden="true" />}
+                              description="Mais brilho"
+                            />
+                            <ToolCard
+                              active={prefs.theme === 'dark'}
+                              onClick={() => setTheme('dark')}
+                              label="Escuro"
+                              icon={<Moon className="h-5 w-5" aria-hidden="true" />}
+                              description="Menos fadiga"
+                            />
+                            <ToolCard
+                              active={prefs.highContrast || prefs.profileLowVision}
+                              onClick={toggleContrast}
+                              label="Alto contraste"
+                              icon={prefs.highContrast || prefs.profileLowVision ? <EyeOff className="h-5 w-5" aria-hidden="true" /> : <Eye className="h-5 w-5" aria-hidden="true" />}
+                              description="Legibilidade"
+                            />
+                            <ToolCard
+                              active={prefs.mono}
+                              onClick={toggleMono}
+                              label="Monocromático"
+                              icon={<Palette className="h-5 w-5" aria-hidden="true" />}
+                              description="Sem cores"
+                            />
+                          </div>
+
+                          <p className="mt-3 text-xs leading-relaxed text-[rgba(var(--c-text),0.72)]">
+                            O modo <span className="font-semibold">Alto contraste</span> força contraste em textos e botões para corrigir trechos que ficam apagados.
+                          </p>
+                        </div>
+                      )}
+
+                      {tab === 'navegacao' && (
+                        <div className="mt-3">
+                          <div className="grid grid-cols-2 gap-2">
+                            <ToolCard
+                              active={prefs.keyboardMenu}
+                              onClick={toggleKeyboardMenu}
+                              label="Atalhos"
+                              icon={<Keyboard className="h-5 w-5" aria-hidden="true" />}
+                              description="Alt + 1…9"
+                            />
+                            <ToolCard
+                              active={prefs.smartNav}
+                              onClick={toggleSmartNav}
+                              label="Índice"
+                              icon={<BookOpenText className="h-5 w-5" aria-hidden="true" />}
+                              description="Cabeçalhos"
+                            />
+                            <ToolCard
+                              active={prefs.cursor === 'black'}
+                              onClick={() => setCursor(prefs.cursor === 'black' ? 'default' : 'black')}
+                              label="Cursor preto"
+                              icon={<Target className="h-5 w-5" aria-hidden="true" />}
+                              description="Aumenta visibilidade"
+                            />
+                            <ToolCard
+                              active={prefs.cursor === 'white'}
+                              onClick={() => setCursor(prefs.cursor === 'white' ? 'default' : 'white')}
+                              label="Cursor branco"
+                              icon={<Target className="h-5 w-5" aria-hidden="true" />}
+                              description="Aumenta visibilidade"
+                            />
+                          </div>
+
+                          <div className="mt-2 grid grid-cols-2 gap-2">
+                            <ToolCard
+                              active={prefs.reduceMotion || prefs.profileEpilepsy}
+                              onClick={toggleReduceMotion}
+                              label="Reduzir movimentos"
+                              icon={<Sparkles className="h-5 w-5" aria-hidden="true" />}
+                              description="Menos estímulo"
+                            />
+                            <ToolCard
+                              active={prefs.readingMask || prefs.profileAdhd}
+                              onClick={toggleReadingMask}
+                              label="Máscara de leitura"
+                              icon={<Target className="h-5 w-5" aria-hidden="true" />}
+                              description="Concentração"
+                            />
+                          </div>
+
+                          <HeadingIndex enabled={prefs.smartNav} onJump={onJump} />
+
+                          <p className="mt-3 text-xs leading-relaxed text-[rgba(var(--c-text),0.72)]">
+                            Dica: para navegação sem mouse, use <span className="font-semibold">Tab</span> e{' '}
+                            <span className="font-semibold">Shift+Tab</span>. O anel de foco fica mais forte no perfil motor.
+                          </p>
+                        </div>
+                      )}
+
+                      {tab === 'som' && (
+                        <div className="mt-3">
+                          <div className="space-y-2">
+                            <ToggleSwitch
+                              checked={prefs.muteSite}
+                              onChange={(next) => setPrefs((p) => ({ ...p, muteSite: next }))}
+                              label="Silenciar sons"
+                              description="Desativa sons do site (áudios, vídeos e falas)."
+                              icon={<VolumeX className="h-4 w-4" aria-hidden="true" />}
+                            />
+
+                            <ToggleSwitch
+                              checked={prefs.hoverReader}
+                              onChange={(next) => setPrefs((p) => ({ ...p, hoverReader: next }))}
+                              label="Leitor de texto"
+                              description="Ao passar o mouse, lê o conteúdo do item destacado."
+                              icon={<Volume2 className="h-4 w-4" aria-hidden="true" />}
+                            />
+                          </div>
+
+                          {isReading ? (
+                            <button
+                              type="button"
+                              onClick={stopReading}
+                              className="mt-2 flex w-full min-h-11 items-center justify-center gap-2 rounded-2xl border border-[rgba(var(--c-border),0.75)] bg-[rgba(var(--c-surface),0.90)] px-3 py-3 text-sm font-semibold text-[rgb(var(--c-text))] hover:bg-[rgba(var(--c-border),0.22)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(var(--c-primary),0.40)]"
+                              aria-label="Parar leitura"
+                            >
+                              <VolumeX className="h-4 w-4" aria-hidden="true" />
+                              <span>Parar leitura</span>
+                            </button>
+                          ) : null}
+
+                          {ttsHint && (
+                            <p className="mt-2 text-xs leading-relaxed text-[rgba(var(--c-text),0.78)]" role="status">
+                              {ttsHint}
+                            </p>
+                          )}
+
+                          <p className="mt-3 text-xs leading-relaxed text-[rgba(var(--c-text),0.72)]">
+                            Dica: ative o <span className="font-semibold">Leitor de texto</span> e passe o mouse sobre títulos, botões e trechos do formulário.
+                          </p>
+                        </div>
+                      )}                    </section>
+                  </div>
                 </div>
-              )}
-            </section>
-          </div>
-        </div>
-      </aside>
+              </aside>
+      )}
     </>
   )
+
+  if (!portalEl) return null
+  return createPortal(overlay, portalEl)
 }
