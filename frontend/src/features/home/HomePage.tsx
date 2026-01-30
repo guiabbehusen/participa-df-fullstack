@@ -423,7 +423,7 @@ export function HomePage() {
 
                     <p className="mt-1 text-sm leading-relaxed text-slate-700">
                       Abra o chat no canto inferior direito. A IZA organiza seu relato e ajuda a preencher o formulário
-                      com você — passo a passo.
+                      com você, passo a passo.
                     </p>
                   </div>
                 </div>
