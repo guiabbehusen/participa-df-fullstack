@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "postinstall": "echo 'postinstall: ok'"
+    "postinstall": "echo 'postinstall: ok'",
+    "pwa": "vite build && vite preview"
   },
   "dependencies": {
     "@formkit/auto-animate": "^0.9.0",
