@@ -161,14 +161,6 @@ def _compute_missing(draft: Dict[str, Any]) -> tuple[list[str], list[str], bool]
     if not desc and not (has_img or has_audio or has_video):
         required.append("description_text_or_attachment")
 
-    # Identification required for certain kinds
-    if kind in {"elogio", "sugestao", "solicitacao"}:
-        if anon is True:
-            required.append("anonymous_must_be_false")
-        if len((draft.get("contact_name") or "").strip()) < 3:
-            required.append("contact_name")
-        if len((draft.get("contact_email") or "").strip()) < 5:
-            required.append("contact_email")
 
     # A11y requirements if attachments are present
     if has_img and len((draft.get("image_alt") or "").strip()) < 3:
@@ -221,10 +213,10 @@ def _system_prompt(draft: Dict[str, Any], missing_required: list[str], missing_r
         "- Se o usuário trouxer novos dados, atualize apenas os campos relacionados no patch (não apague o que já está correto).\n"
         "- Acessibilidade (WCAG): se houver anexo, exija descrição alternativa: imagem -> texto alternativo; áudio -> transcrição; vídeo -> descrição.\n"
         "- Tipos do formulário: reclamacao, denuncia, sugestao, elogio, solicitacao.\n"
-        "- Se kind for elogio, sugestao ou solicitacao: IDENTIFICAÇÃO É OBRIGATÓRIA (contact_name e contact_email) e anonymous deve ser false.\n\n"
+        "- Se o usuário quiser se identificar: IDENTIFICAÇÃO (contact_name e contact_email) e anonymous deve ser false.\n\n"
         "Orientações importantes para o registro:\n"
-        "- Para acompanhar e receber a resposta, a pessoa precisa se identificar (nome e e-mail).\n"
-        "- Reclamação e denúncia podem ser registradas sem identificação, mas sem acompanhamento nem envio de resposta por e-mail.\n"
+        "- Para acompanhar e receber a resposta, a pessoa precisa se identificar, deve-se perguntar se quer que seja em anonimato ou não (nome e e-mail).\n"
+        "- As manifestações podem ser registradas sem identificação (anônimo), mas sem acompanhamento nem envio de resposta por e-mail.\n"
         "- Proteção ao denunciante: trate denúncias com sigilo da identidade.\n"
         "- Privacidade: oriente o usuário a NÃO colocar CPF, e-mail, data de nascimento etc. no texto do relato. Se aparecer, peça para remover e NÃO repita esses dados na resposta.\n"
         "- Se o assunto for do Governo Federal (ex.: INSS, Conecta SUS, gov.br), oriente a usar o sistema Fala BR.\n"
@@ -253,7 +245,7 @@ def _system_prompt(draft: Dict[str, Any], missing_required: list[str], missing_r
         "  }\n"
         "}\n\n"
         "Orientação de conversa:\n"
-        "- Siga o passo a passo: 1) detalhes do fato (o quê/onde/quando/como/impacto) 2) definir tipo e assunto 3) complementar localização 4) anexos e descrições (A11y) 5) confirmar e gerar protocolo.\n"
+        "- Siga o passo a passo: 1) detalhes do fato (o quê/onde/quando/impacto) 2) definir tipo e assunto 3) complementar localização 4) anexos e descrições (A11y) 5) confirmar e gerar protocolo.\n"
         "- Priorize completar: kind -> subject -> subject_detail -> relato/onde/quando/impacto -> anexos (se aplicável) -> identificação (se exigida).\n"
         "- Se for infraestrutura, normalmente uma foto ajuda: peça para anexar uma foto se ainda não houver anexo.\n"
         "- Em assistant_message, explique o próximo passo de forma curta e clara.\n"

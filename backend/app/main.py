@@ -97,7 +97,9 @@ def _validate_email(email: Optional[str]) -> Optional[str]:
 
 
 def _kind_requires_identification(kind: str) -> bool:
-    return kind in {"elogio", "sugestao", "solicitacao"}
+    # Regra atual: todos os tipos permitem anonimato; identificação é opcional
+    # (necessária apenas se o cidadão quiser acompanhamento/retorno por e-mail).
+    return False
 
 
 @app.post(
@@ -156,16 +158,16 @@ async def create_manifestation(
             status_code=422,
             detail="Envie um relato em texto ou anexe pelo menos um arquivo.",
         )
-
-    # Identification rules
+    # Identificação (opcional): valida apenas se informado.
     email_norm = _validate_email(contact_email)
-    if _kind_requires_identification(kind):
-        if anonymous:
-            raise HTTPException(status_code=422, detail="Para este tipo, o envio anônimo não é permitido. Informe seus dados.")
-        if not contact_name or len(contact_name.strip()) < 3:
-            raise HTTPException(status_code=422, detail="Nome é obrigatório para este tipo de manifestação.")
-        if not email_norm:
-            raise HTTPException(status_code=422, detail="E-mail é obrigatório para este tipo de manifestação.")
+    if contact_name and len(contact_name.strip()) < 3:
+        raise HTTPException(status_code=422, detail="Nome deve ter no mínimo 3 caracteres.")
+
+    # Em modo anônimo, não armazenamos dados de contato (proteção do cidadão)
+    if anonymous:
+        contact_name = None
+        email_norm = None
+        contact_phone = None
 
     # Attachment accessibility rules
     attachments: list[AttachmentDB] = []
