@@ -69,13 +69,11 @@ const SUBJECT_EXAMPLES = [
   'Transporte',
 ]
 
-const needsIdentification = (k?: ManifestationKind) =>
-  k === 'elogio' || k === 'sugestao' || k === 'solicitacao'
-
+const needsIdentification = (_k?: ManifestationKind) => false;
 const isValidEmail = (email?: string) => {
-  if (!email) return false
-  return z.string().email().safeParse(email).success
-}
+  if (!email) return false;
+  return z.string().email().safeParse(email).success;
+};
 
 const schema = z
   .object({
@@ -164,44 +162,8 @@ const schema = z
       })
     }
 
-    // Regra: elogio/sugestão/solicitação exigem identificação
-    if (needsIdentification(data.kind)) {
-      if (data.anonymous) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['anonymous'],
-          message: 'Para elogio, sugestão ou solicitação, a identificação é obrigatória (sem anonimato).',
-        })
-      }
-
-      if (!data.contact_name || data.contact_name.trim().length < 3) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['contact_name'],
-          message: 'Informe seu nome (mín. 3 caracteres).',
-        })
-      }
-
-      if (!data.contact_email || data.contact_email.trim().length < 5) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['contact_email'],
-          message: 'Informe um e-mail válido para contato.',
-        })
-      } else {
-        const emailOk = z.string().email().safeParse(data.contact_email).success
-        if (!emailOk) {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            path: ['contact_email'],
-            message: 'Informe um e-mail válido para contato.',
-          })
-        }
-      }
-    }
-
-    // Para outros tipos, se o usuário preencher e-mail, valide formato.
-    if (!needsIdentification(data.kind) && data.contact_email && data.contact_email.trim().length > 0) {
+    // Se o usuário preencher e-mail, valide formato.
+    if (data.contact_email && data.contact_email.trim().length > 0) {
       const emailOk = z.string().email().safeParse(data.contact_email).success
       if (!emailOk) {
         ctx.addIssue({
@@ -580,8 +542,7 @@ export function NewManifestationPage() {
             role: 'user',
             content:
               'Com base no RELATO e nos ANEXOS do rascunho, sugira e preencha APENAS no draft_patch: kind, subject e subject_detail. ' +
-              'Não faça perguntas. Não solicite dados pessoais. ' +
-              'Se o kind sugerido exigir identificação (elogio/sugestao/solicitacao), defina anonymous=false no draft_patch.',
+              'Não faça perguntas. Não solicite dados pessoais.',
           },
         ],
         draftForIza,
